@@ -1,0 +1,22 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyc
+
+# 데이터셋
+data/cifar-10-batches-py/
+data/cifar-100-python/
+data/*.tar.gz
+
+# 로그 파일
+*.log
+nohup.out
+
+# 임시 파일
+*.tmp
+.DS_Store
+
+# IDE
+.vscode/
+.idea/
+*.swp
