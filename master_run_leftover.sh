@@ -42,8 +42,8 @@ log "   MAX_SECONDS=$MAX_SECONDS (47h)"
 nvidia-smi --query-gpu=index,name,utilization.gpu,memory.used --format=csv | tee -a $MASTER_LOG
 echo "" | tee -a $MASTER_LOG
 
-run_if_time_left scripts/run/batch3a_tier2_part1.sh $GPU
-# batch6_wrn → ahnbi 서버에서 병렬 실행 (GPU1)
+# batch3a → ahnbi GPU1에서 처리
+# batch6_wrn → ahnbi GPU1에서 처리
 run_if_time_left scripts/run/batch7_imagenet_gpu1.sh $GPU
 
 log "=== Master Leftover — All batches completed ==="

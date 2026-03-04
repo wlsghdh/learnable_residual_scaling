@@ -58,8 +58,8 @@ echo "" | tee -a $MASTER_LOG
 run_if_time_left scripts/run/batch2b_tier1_part2.sh $GPU
 # batch3a는 GPU1(master_run_gpu1.sh)이 담당 → 여기서 제거
 run_if_time_left scripts/run/batch3b_tier2_part2.sh $GPU
-run_if_time_left scripts/run/batch5_tier4.sh $GPU
-# batch6_resnext → ahnbi 서버에서 병렬 실행 (GPU0)
+# batch5_tier4 → ahnbi GPU0에서 처리
+# batch6_resnext → ahnbi GPU0에서 처리
 
 # ── ImageNet (CIFAR 완료 후) ────────────────────────
 run_if_time_left scripts/run/batch7_imagenet_gpu2.sh $GPU
