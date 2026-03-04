@@ -1,0 +1,8 @@
+model_name,depth,best_acc,best_epoch
+Baseline_ResNet200,200,0.8071,94
+HybridA_ResNet101,101,0.955,97
+LRS_Low_ResNet50,50,0.9468,83
+LRS_High_ResNet101,101,0.7506,98
+LRS_High_ResNet200,200,0.9055,98
+LRS_HybridA_Low_ResNet50,50,0.7689,96
+HybridA_ResNet200,200,0.8062,100
