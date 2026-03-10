@@ -202,11 +202,17 @@ def main():
     parser.add_argument('--seed', type=int, default=42,
                         help='랜덤 시드 (default: 42)')
     parser.add_argument('--device', type=str, default=None)
+    parser.add_argument('--save-dir', type=str, default=None,
+                        help='결과 저장 경로 override (default: config.py의 save_dir)')
     parser.add_argument('--batch-size', type=int, default=None,
                         help='배치 크기 override (default: config.py 설정 사용)')
     parser.add_argument('--lr', type=float, default=None,
                         help='학습률 override (default: config.py 설정 사용)')
     args = parser.parse_args()
+
+    # save_dir override
+    if args.save_dir is not None:
+        CONFIG['save_dir'] = args.save_dir
 
     # batch_size / lr override — config.py 기준값을 덮어씀
     if args.batch_size is not None or args.lr is not None:
