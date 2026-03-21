@@ -41,7 +41,7 @@ bash scripts/runs/ahnbi1/day1.sh
 ### Lifeai (GPU ID 필수 지정)
 ```bash
 # GPU 3번 사용 예시
-nohup bash scripts/runs/lifeai/day1.sh 3 > logs/lifeai/nohup_day1.log 2>&1 &
+nohup bash scripts/runs/lifeai/day7.sh 3 > logs/lifeai/nohup_day7.log 2>&1 &
 ```
 
 ## GPU 사용 방식

@@ -24,7 +24,7 @@ else
     --model "$MODEL" \
     --data /nfs_share/datasets/ILSVRC2012 \
     --output results-json/imagenet \
-    --epochs 90 \
+    --epochs 60 \
     --batch-size 512 \
     --lr 0.2 \
     --warmup-epochs 5 \
