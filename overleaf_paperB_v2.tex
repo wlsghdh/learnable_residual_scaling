@@ -1,0 +1,738 @@
+\documentclass[preprint,12pt]{elsarticle}
+
+\usepackage{amssymb}
+\usepackage{amsmath}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{multirow}
+\usepackage{hyperref}
+\usepackage{xcolor}
+\usepackage{subcaption}
+
+\journal{arXiv preprint}
+
+\begin{document}
+
+\begin{frontmatter}
+
+\title{ResNet Selects Its Own Depth:\\Observing Effective Depth via Learnable Residual Scaling}
+
+\author[suwon]{Jinho Ju\corref{cor1}}
+\ead{wlsgh20728@naver.com}
+\cortext[cor1]{Corresponding author}
+
+\affiliation[suwon]{organization={The University of Suwon},
+  city={Hwaseong},
+  state={Gyeonggi-do},
+  country={Republic of Korea}}
+
+\begin{abstract}
+Residual networks combine the residual branch $F(x)$ and the identity connection $x$ at a fixed 1:1 ratio: $y = F(x) + x$. While this ratio has been the de facto standard since He et al.\ (2016), the question of whether every block in a deep ResNet contributes equally---and whether the network truly needs all of its nominal depth---has received limited quantitative investigation.
+
+We introduce Learnable Residual Scaling (LRS) as an analytical tool to make the network's own depth preferences observable. LRS attaches a single learnable parameter $\alpha$ to each residual block, defining $y = \alpha \cdot F(x) + (1 - \alpha) \cdot x$ with $\alpha = \sigma(\theta) \in (0,1)$. After training, the learned $\alpha$ values reveal which blocks the network considers essential and which it effectively bypasses.
+
+Through systematic experiments on CIFAR-10/100 (depths 50--200, 3 seeds per configuration) and ImageNet (ResNet-50), we report three principal findings. First, the mean converged $\alpha$ decreases systematically with depth (50 layers: $\alpha \approx 0.35$, 200 layers: $\alpha \approx 0.12$), and this pattern is largely independent of the dataset, suggesting it is an architectural rather than data-driven phenomenon. Second, per-block analysis of a 200-layer network reveals that only 5--6 out of 66 blocks maintain $\alpha > 0.3$; the network's \emph{effective depth} is roughly 8\% of its nominal depth. Third, residual-favoring initialization ($\alpha_0 \approx 0.88$) causes catastrophic training collapse at depth 200 (CIFAR-10: $67.25\%$, CIFAR-100: $37.50\%$), demonstrating that identity preservation at initialization is a necessary condition for training deep networks. These results show that deep ResNets autonomously select a much shallower effective depth through their skip connections, and LRS makes this self-selection directly observable.
+\end{abstract}
+
+\begin{keyword}
+Residual networks \sep Effective depth \sep Skip connections \sep Learnable scaling \sep Identity mapping \sep Empirical analysis
+\end{keyword}
+
+\end{frontmatter}
+
+%% ============================================================
+\section{Introduction}
+\label{sec:intro}
+
+Residual Networks (ResNets)~\cite{he2016deep} enabled training of networks with hundreds of layers through the introduction of skip connections. In the standard residual block, the output is computed as $y = F(x) + x$, where the learned transformation $F(x)$ and the identity shortcut $x$ are combined with equal weight. This 1:1 ratio has been implicitly adopted by virtually all residual architectures.
+
+Yet a growing body of evidence suggests that not all layers in a deep ResNet contribute equally. Veit et al.~\cite{veit2016residual} demonstrated that ResNets behave like ensembles of many paths of varying lengths, with effective paths being substantially shorter than the full network depth. Greff et al.~\cite{greff2017highway} showed similar findings for Highway Networks. These observations raise a natural question: \emph{does a deep ResNet actually use all of its depth, or does it autonomously select a much shallower effective depth?}
+
+Answering this question requires a tool that can measure each block's contribution to the final output. Several works have explored scaling of the residual branch---ReZero~\cite{bachlechner2021rezero}, SkipInit~\cite{de2020batch}, Fixup~\cite{zhang2019fixup}, and LayerScale~\cite{touvron2021going}---but these methods scale only $F(x)$ while keeping the identity fixed, making it impossible to read off the relative ratio between the two.
+
+To motivate why this question matters, consider the gradient flow through a deep network. Figure~\ref{fig:gradient_flow} shows the per-block gradient L2 norms at initialization for a 200-layer ResNet on CIFAR-100. A plain network without skip connections exhibits catastrophic gradient explosion: the gradient norm at Block~0 reaches $1.72 \times 10^{13}$, while Block~65 has only $5.0$---a ratio of $3.5 \times 10^{12}$. Skip connections (standard ResNet) dramatically stabilize this: Block~0 has $3{,}667$ and Block~65 has $5.4$, a ratio of $673\times$. This stabilization is well known. However, when we attach learnable scaling via LRS Low, a striking pattern emerges: Block~0 gradient is $4{,}933$ but Block~65 drops to just $0.6$---a ratio of $7{,}747\times$. The near-zero gradient in later blocks reflects that $\alpha \approx 0$ for those blocks; the network is not even attempting to learn them. Skip connections stabilize gradient flow, but the network uses this stability not to leverage deep computation, but to \emph{bypass} most of its blocks.
+
+\begin{figure}[t]
+    \centering
+    \includegraphics[width=\linewidth]{figures/fig0_gradient_flow.pdf}
+    \caption{Per-block gradient L2 norms at initialization for ResNet-200 on CIFAR-100. (a) Plain networks without skip connections exhibit gradient explosion ($>10^{13}$) in early blocks. Skip connections (ResNet) stabilize gradients across all blocks. (b-c) With LRS, later blocks show near-zero gradients, reflecting learned $\alpha \approx 0$ --- the network does not attempt to train these blocks.}
+    \label{fig:gradient_flow}
+\end{figure}
+
+We propose \textbf{Learnable Residual Scaling (LRS)} as an analytical instrument. LRS introduces a single learnable parameter $\alpha \in (0,1)$ per block, defining $y = \alpha \cdot F(x) + (1-\alpha) \cdot x$. Because the two coefficients sum to one, the learned $\alpha$ directly encodes the block's preference: $\alpha \to 0$ means the block is effectively an identity (bypass), while $\alpha \to 1$ means it performs a full transformation. After training, the distribution of $\alpha$ values across blocks reveals the network's \emph{effective depth}---the number of blocks that genuinely transform their input.
+
+Using LRS, we conduct systematic experiments across four depths (50, 101, 152, 200), two CIFAR datasets, and ImageNet, with three random seeds per configuration. Our contributions are:
+
+\begin{enumerate}
+    \item \textbf{Depth--$\alpha$ scaling law}: The mean converged $\alpha$ decreases systematically with network depth, and this relationship is largely dataset-independent, suggesting it reflects an intrinsic architectural property.
+    \item \textbf{Effective depth is far smaller than nominal depth}: In a 200-layer network (66 blocks), only 5--6 blocks maintain $\alpha > 0.3$. The network autonomously compresses its effective depth to roughly 8\% of its nominal depth.
+    \item \textbf{Initialization determines trainability}: Residual-favoring initialization ($\alpha_0 \approx 0.88$) causes catastrophic failure at extreme depth, while identity-favoring initialization ($\alpha_0 \approx 0.12$) remains stable across all depths.
+\end{enumerate}
+
+Code and all experimental results are available at \url{https://github.com/Wlsghdh/Learnable_Residual_Scaling}.
+
+%% ============================================================
+\section{Related Work}
+\label{sec:related}
+
+\subsection{Residual Networks and Skip Connections}
+
+ResNet~\cite{he2016deep} introduced skip connections to alleviate gradient vanishing in deep networks. He et al.~\cite{he2016identity} further showed that identity mappings (pre-activation ResNet) improve gradient flow. Highway Networks~\cite{srivastava2015highway} proposed gated information flow prior to ResNet, but ResNet's simpler additive shortcut proved more effective in practice. Veit et al.~\cite{veit2016residual} reinterpreted ResNets as implicit ensembles of paths with varying lengths, showing that effective paths are much shorter than the nominal depth.
+
+\subsection{Residual Scaling Methods}
+
+Several works have explored adjusting the magnitude of the residual branch (Table~\ref{tab:comparison}).
+
+\textbf{ReZero}~\cite{bachlechner2021rezero} initializes a scalar multiplier $\alpha = 0$ on the residual branch ($y = x + \alpha F(x)$), starting from identity to stabilize Transformer training.
+
+\textbf{SkipInit}~\cite{de2020batch} similarly applies a learnable scalar to the residual branch, demonstrating that batch normalization biases residual blocks toward identity.
+
+\textbf{Fixup}~\cite{zhang2019fixup} initializes the last layer of the residual branch to zero and proposes training without normalization through proper scaling.
+
+\textbf{LayerScale}~\cite{touvron2021going} introduces per-channel learnable scaling vectors in Vision Transformers to stabilize training of deep ViTs.
+
+All these methods adjust only $F(x)$ while keeping the identity connection $x$ fixed at weight 1. In contrast, LRS learns the \textbf{relative weight of both} $F(x)$ and $x$ through a single parameter, enabling direct measurement of each block's contribution.
+
+\begin{table}[t]
+\centering
+\caption{Comparison of residual scaling methods. Only LRS measures the relative ratio between $F(x)$ and $x$, making it suitable as an analytical tool for effective depth.}
+\label{tab:comparison}
+\begin{tabular}{lccc}
+\toprule
+\textbf{Method} & \textbf{Formulation} & \textbf{Measurable} & \textbf{Key Difference} \\
+\midrule
+ReZero & $y = x + \alpha F(x)$ & $|F(x)|$ scale & $x$ weight fixed at 1 \\
+SkipInit & $y = x + \alpha F(x)$ & $|F(x)|$ scale & $x$ weight fixed at 1 \\
+LayerScale & $y = x + \Lambda F(x)$ & Per-ch. $|F(x)|$ & $x$ weight fixed at 1 \\
+Fixup & $y = x + \alpha F(x)$ & $|F(x)|$ scale & Zero init last layer \\
+\textbf{LRS (ours)} & $\mathbf{y = \alpha F(x) + (1{-}\alpha)x}$ & $\mathbf{F(x):x}$ \textbf{ratio} & \textbf{Both sides adjusted} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Effective Depth and Network Redundancy}
+
+The concept of effective depth has been explored from multiple angles. Huang et al.~\cite{huang2016deep} proposed stochastic depth, randomly dropping residual blocks during training, showing that not all blocks are needed. More recently, the lottery ticket hypothesis~\cite{frankle2019lottery} demonstrated that large networks contain small subnetworks that can match the full network's performance. Our work provides a complementary perspective: rather than pruning or dropping blocks, we let the network \emph{itself} reveal which blocks it considers essential, through the learned $\alpha$ values.
+
+%% ============================================================
+\section{Method}
+\label{sec:method}
+
+\subsection{Learnable Residual Scaling}
+
+We redefine the standard residual block output $y = F(x) + x$ as:
+\begin{equation}
+    y = \alpha \cdot F(x) + (1 - \alpha) \cdot x
+    \label{eq:lrs}
+\end{equation}
+where $\alpha = \sigma(\theta)$, $\theta$ is a learnable scalar parameter per block, and $\sigma$ is the sigmoid function constraining $\alpha \in (0, 1)$.
+
+\textbf{Design rationale.} The sigmoid parameterization serves two purposes. First, since $\alpha + (1 - \alpha) = 1$, the \textbf{relative ratio} between $F(x)$ and $x$ is directly interpretable: $\alpha = 0.14$ means the block allocates 14\% weight to the transformation and 86\% to the identity. Second, the bounded range ensures numerical stability.
+
+The semantics of $\alpha$ provide a natural definition of effective depth:
+\begin{itemize}
+    \item $\alpha \to 0$: The block is effectively bypassed ($y \approx x$); it does not contribute to the network's effective depth.
+    \item $\alpha = 0.5$: Equal ratio, equivalent to the standard ResNet block.
+    \item $\alpha \to 1$: The block performs a full transformation ($y \approx F(x)$).
+\end{itemize}
+
+A block with small $\alpha$ is one that the network has chosen to largely skip. The \textbf{effective depth} of the network is the number of blocks with $\alpha$ above a meaningful threshold.
+
+\begin{figure}[t]
+    \centering
+    \includegraphics[width=0.85\linewidth]{figures/fig1_block_diagram.pdf}
+    \caption{Computation graph of an LRS block. The learnable parameter $\alpha = \sigma(\theta) \in (0,1)$ controls the relative contribution of the residual transformation $F(x)$ and the identity shortcut $x$. After training, $\alpha$ reveals whether the block actively transforms its input or effectively acts as an identity bypass.}
+    \label{fig:lrs_block}
+\end{figure}
+
+\subsection{Gradient Flow Analysis}
+
+The backward pass through an LRS block yields:
+\begin{equation}
+    \frac{\partial \mathcal{L}}{\partial x} = \frac{\partial \mathcal{L}}{\partial y} \left[ (1 - \alpha) + \alpha \cdot F'(x) \right]
+    \label{eq:grad}
+\end{equation}
+
+The total gradient through $L$ blocks:
+\begin{equation}
+    \frac{\partial \mathcal{L}}{\partial x_0} = \frac{\partial \mathcal{L}}{\partial y_L} \cdot \prod_{i=1}^{L} \left[ (1 - \alpha_i) + \alpha_i \cdot F'_i(x_i) \right]
+    \label{eq:total_grad}
+\end{equation}
+
+This product structure explains the depth--$\alpha$ relationship. For the product to remain stable across $L$ blocks, each factor $(1 - \alpha_i) + \alpha_i F'_i$ must be close to 1. When $\alpha_i$ is small, the factor approaches $(1 - \alpha_i) \approx 1$ regardless of $F'_i$, ensuring gradient stability. As $L$ grows, smaller $\alpha_i$ values are needed to maintain the product near unity. This provides the theoretical basis for why deeper networks should converge to smaller $\alpha$ values.
+
+Conversely, when $\alpha_i$ is large (close to 1), the factor becomes $\approx F'_i$, and the gradient product degenerates to that of a plain (non-residual) network, which is prone to vanishing gradients. This explains why residual-favoring initialization ($\alpha_0 \approx 0.88$) leads to training collapse at extreme depth.
+
+\subsection{Initialization Variants}
+
+We experiment with three initialization strategies (Table~\ref{tab:init_variants}) to study convergence and sensitivity:
+
+\begin{table}[t]
+\centering
+\caption{LRS model variants by $\alpha$ initialization. All three start from different points to test whether $\alpha$ converges to the same optimum.}
+\label{tab:init_variants}
+\begin{tabular}{lccc}
+\toprule
+\textbf{Variant} & $\theta_0$ & $\alpha_0$ & \textbf{Initial Bias} \\
+\midrule
+LRS Low  & $-2.0$ & $\approx 0.12$ & Identity-favoring \\
+LRS Mid  & $0.0$  & $0.50$         & Balanced (standard ResNet) \\
+LRS High & $+2.0$  & $\approx 0.88$ & Residual-favoring \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+These three initializations serve as probes: if the optimization landscape has a single basin, all three should converge to the same $\alpha$; if initialization matters, we expect divergence, revealing the role of initial conditions in determining effective depth.
+
+%% ============================================================
+\section{Experiments}
+\label{sec:experiments}
+
+\subsection{Experimental Setup}
+\label{sec:setup}
+
+\textbf{Datasets.} CIFAR-10 (10 classes, 50K/10K train/test) and CIFAR-100 (100 classes, 50K/10K) for systematic analysis; ImageNet (1000 classes, 1.28M/50K) for large-scale validation.
+
+\textbf{Architectures.} Bottleneck ResNet-50/101/152/200 for CIFAR experiments; ResNet-50 for ImageNet. The number of residual blocks per depth is: 50$\to$16, 101$\to$33, 152$\to$50, 200$\to$66.
+
+\textbf{Training (CIFAR).} SGD with momentum 0.9 and weight decay $10^{-4}$; initial learning rate 0.1 with cosine annealing; 5-epoch linear warmup; 100 total epochs; batch size 128.
+
+\textbf{Training (ImageNet).} SGD with momentum 0.9 and weight decay $10^{-4}$; initial learning rate 0.1 with cosine annealing; 5-epoch warmup; 100 epochs; batch size 256.
+
+\textbf{Seeds and reporting.} All CIFAR experiments use 3 random seeds (42, 123, 456). We report mean $\pm$ standard deviation. ImageNet experiments use a single seed due to computational cost.
+
+\textbf{Models.} Five primary models are evaluated: Baseline (standard ResNet), LRS Low ($\alpha_0 \approx 0.12$), LRS Mid ($\alpha_0 = 0.50$), LRS High ($\alpha_0 \approx 0.88$), and ReZero ($\alpha_0 = 0$, $y = x + \alpha F(x)$). For comparison with existing methods, we additionally evaluate SkipInit, Fixup, and LayerScale.
+
+\subsection{Alpha Convergence Across Depths}
+\label{sec:alpha_convergence}
+
+We first examine the central question: how does the network's preferred $\alpha$ change with depth? Table~\ref{tab:depth_alpha} presents the mean converged $\alpha$ values on CIFAR-100 for all three LRS initialization variants, averaged over 3 seeds.
+
+\begin{table}[t]
+\centering
+\caption{Mean converged $\alpha$ values by depth on CIFAR-100 (3-seed average). Despite starting from very different initial values ($\alpha_0 = 0.12, 0.50, 0.88$), the Low and Mid variants converge to similar final values at each depth, while High diverges at greater depths.}
+\label{tab:depth_alpha}
+\begin{tabular}{lcccc}
+\toprule
+\textbf{Depth} & \textbf{Blocks} & \textbf{LRS Low} & \textbf{LRS Mid} & \textbf{LRS High} \\
+\midrule
+50  & 16 & 0.34 & 0.35 & 0.36 \\
+101 & 33 & 0.18 & 0.20 & 0.21 \\
+152 & 50 & 0.13 & 0.15 & 0.23 \\
+200 & 66 & 0.11 & 0.13 & 0.28 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Several important observations emerge:
+
+\textbf{Systematic decrease with depth.} The converged $\alpha$ decreases monotonically with depth across all initialization variants. For LRS Low, $\alpha$ drops from 0.34 (depth 50) to 0.11 (depth 200), indicating that the network allocates only 11\% weight to block transformations in the deepest configuration. This means each block's contribution shrinks as more blocks are added.
+
+\textbf{Partial convergence across initializations.} At depth 50, all three variants converge to nearly identical values (0.34--0.36), indicating a well-defined optimum. However, at depth 200, the convergence breaks down: LRS High settles at 0.28, significantly above the 0.11--0.13 range of Low and Mid. This divergence is coupled with severe performance degradation (Section~\ref{sec:init_sensitivity}), indicating that LRS High becomes trapped in a suboptimal basin at extreme depth.
+
+\textbf{Data independence.} The converged $\alpha$ values are highly similar between CIFAR-10 and CIFAR-100 (not shown separately for brevity), suggesting that the depth--$\alpha$ relationship is governed by architectural properties rather than task complexity.
+
+\begin{figure}[t]
+    \centering
+    \includegraphics[width=0.85\linewidth]{figures/fig2_alpha_depth.pdf}
+    \caption{Mean converged $\alpha$ as a function of network depth for three initialization variants on CIFAR-100. At shallow depths, all initializations converge to similar values; at extreme depths, High initialization diverges due to optimization difficulties.}
+    \label{fig:alpha_convergence}
+\end{figure}
+
+\subsection{Alpha Trajectory During Training}
+\label{sec:alpha_trajectory}
+
+Figure~\ref{fig:alpha_trajectory} shows how the mean $\alpha$ evolves during the course of training. All three initializations show rapid early adjustment: LRS Low increases slightly from 0.12, LRS Mid decreases from 0.50, and LRS High decreases from 0.88 (when training succeeds). The trajectories largely stabilize within the first 20--30 epochs, with fine-tuning continuing until the end of training.
+
+At depth 200, the LRS High trajectory reveals the failure mode: $\alpha$ decreases slowly but fails to reach the values achieved by Low and Mid, remaining stuck at approximately 0.28. The network cannot recover from the initial gradient degradation caused by the high $\alpha$ values.
+
+\begin{figure}[t]
+    \centering
+    \includegraphics[width=\linewidth]{figures/fig3_alpha_trajectory.pdf}
+    \caption{Mean $\alpha$ trajectories during training across epochs. Left: successful convergence from different starting points at moderate depth. Right: at depth 200, LRS High fails to converge to the optimal range, remaining trapped at a suboptimal $\alpha \approx 0.28$.}
+    \label{fig:alpha_trajectory}
+\end{figure}
+
+\subsection{Per-Block Alpha Distribution}
+\label{sec:perblock}
+
+The mean $\alpha$ value across all blocks hides important structure. Figure~\ref{fig:perblock_alpha} shows the per-block $\alpha$ distribution for a 200-layer network (66 blocks, LRS Low, CIFAR-100).
+
+The distribution reveals a striking pattern:
+
+\textbf{Downsampling blocks have high $\alpha$.} The first block of each stage (where spatial downsampling occurs and channel dimensions change) maintains $\alpha$ values between 0.42 and 0.96, approximately 5$\times$ the average. These blocks perform essential feature transformations that cannot be bypassed.
+
+\textbf{Normal blocks have low $\alpha$.} Within each stage, non-downsampling blocks have $\alpha$ values of 0.06--0.15, and these values tend to decrease toward the end of the stage. Most of these blocks are near-identity operations.
+
+\textbf{Decreasing $\alpha$ within stages.} Within a given stage, blocks further from the downsampling point tend to have progressively smaller $\alpha$ values, suggesting diminishing marginal contribution.
+
+\begin{figure}[t]
+    \centering
+    \includegraphics[width=\linewidth]{figures/fig4_perblock_alpha.pdf}
+    \caption{Per-block $\alpha$ values for a 200-layer ResNet (66 blocks, LRS Low, CIFAR-100). Stage boundaries (downsampling blocks) are marked with dashed lines. Downsampling blocks maintain high $\alpha$ while most within-stage blocks converge to near-zero values.}
+    \label{fig:perblock_alpha}
+\end{figure}
+
+\begin{figure}[t]
+    \centering
+    \includegraphics[width=0.85\linewidth]{figures/fig8_heatmap.pdf}
+    \caption{Detailed view of per-block $\alpha$ distributions grouped by stage. The consistent pattern of high $\alpha$ at stage boundaries followed by decay within each stage is evident across all four stages.}
+    \label{fig:perblock_detail}
+\end{figure}
+
+\subsection{Effective Depth Analysis}
+\label{sec:effective_depth}
+
+The per-block $\alpha$ distribution enables a direct measurement of \emph{effective depth}---the number of blocks that meaningfully transform their input. Using $\alpha > 0.3$ as a threshold (blocks contributing more than 30\% transformation), we find:
+
+\begin{table}[t]
+\centering
+\caption{Effective depth analysis for ResNet-200 (66 blocks) on CIFAR-100, LRS Low. The network uses only a small fraction of its nominal depth.}
+\label{tab:effective_depth}
+\begin{tabular}{lcc}
+\toprule
+\textbf{Metric} & \textbf{Value} & \textbf{Interpretation} \\
+\midrule
+Nominal blocks & 66 & Total residual blocks \\
+Blocks with $\alpha > 0.3$ & 5--6 & Actively transforming \\
+Effective depth ratio & $\sim$8\% & Fraction of blocks used \\
+Mean $\alpha$ (normal blocks) & 0.06--0.15 & Near-identity \\
+Mean $\alpha$ (downsampling blocks) & 0.42--0.96 & Active transformation \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+This finding has a remarkable implication: \textbf{a 200-layer ResNet autonomously selects an effective depth of approximately 5--6 blocks}. The remaining 60+ blocks serve primarily as identity shortcuts, passing information through with minimal transformation. The network has, in effect, chosen to be shallow despite being given the capacity to be deep.
+
+This is consistent with the ensemble interpretation of Veit et al.~\cite{veit2016residual}, who showed that effective paths in ResNets are much shorter than the full network depth. LRS provides a direct, per-block measurement of this phenomenon.
+
+\textbf{Threshold sensitivity.} The choice of $\alpha > 0.3$ as the threshold for ``active'' blocks is admittedly arbitrary. To address this concern, we present two complementary analyses.
+
+First, Table~\ref{tab:threshold_sensitivity} shows effective depth across a range of thresholds. Regardless of the threshold chosen, two patterns remain invariant: (1) effective depth ratio decreases monotonically with nominal depth, and (2) the gap between shallow and deep networks is substantial at every threshold.
+
+\begin{table}[t]
+\centering
+\caption{Effective depth ratio (\% of blocks with $\alpha$ above threshold) for LRS Low on CIFAR-100 (3-seed average). The pattern of decreasing effective depth with increasing nominal depth is consistent across all thresholds.}
+\label{tab:threshold_sensitivity}
+\begin{tabular}{lcccc}
+\toprule
+\textbf{Threshold} & \textbf{Depth 50} & \textbf{Depth 101} & \textbf{Depth 152} & \textbf{Depth 200} \\
+\midrule
+$\alpha > 0.10$ & 100\% & 54\% & 40\% & 28\% \\
+$\alpha > 0.20$ & 83\% & 27\% & 15\% & 10\% \\
+$\alpha > 0.30$ & 40\% & 18\% & 11\% & 7\% \\
+$\alpha > 0.40$ & 25\% & 12\% & 7\% & 5\% \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Second, we define a threshold-free metric: $D_\text{eff} = \sum_{i=1}^{N} \alpha_i$, which represents the effective depth as the sum of all block contributions. This metric requires no arbitrary cutoff:
+
+\begin{table}[t]
+\centering
+\caption{Threshold-free effective depth ($D_\text{eff} = \sum \alpha_i$) for LRS Low on CIFAR-100. Although the number of blocks increases 4$\times$ from depth 50 to 200, $D_\text{eff}$ increases only 1.4$\times$.}
+\label{tab:deff}
+\begin{tabular}{lccc}
+\toprule
+\textbf{Depth} & \textbf{Blocks ($N$)} & $\mathbf{D_\text{eff} = \sum \alpha_i}$ & $\mathbf{D_\text{eff}/N}$ \\
+\midrule
+50  & 16 & 5.4 & 34.0\% \\
+101 & 33 & 6.0 & 18.3\% \\
+152 & 50 & 6.7 & 13.3\% \\
+200 & 66 & 7.5 & 11.4\% \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The $D_\text{eff}$ metric confirms the main finding without any threshold: quadrupling the number of blocks (16 $\to$ 66) increases the effective depth by only 40\% (5.4 $\to$ 7.5). The network adds blocks but barely uses them.
+
+\begin{figure}[t]
+    \centering
+    \includegraphics[width=0.85\linewidth]{figures/fig5_effective_depth.pdf}
+    \caption{Effective depth visualization. Each block is colored by its $\alpha$ value: dark blocks ($\alpha > 0.3$) actively transform the input; light blocks ($\alpha < 0.15$) are near-identity bypasses. Only 5--6 out of 66 blocks in ResNet-200 are ``dark,'' revealing that the network's effective depth is roughly 8\% of its nominal depth.}
+    \label{fig:effective_depth}
+\end{figure}
+
+\subsection{Initialization Sensitivity and LRS High Failure}
+\label{sec:init_sensitivity}
+
+The three LRS initializations reveal dramatic differences in training stability as depth increases. Tables~\ref{tab:cifar10} and~\ref{tab:cifar100} present the full accuracy results.
+
+\begin{table}[t]
+\centering
+\caption{Test accuracy (\%) on CIFAR-10 (3-seed mean $\pm$ std). LRS High shows progressive degradation and catastrophic failure at depth 200.}
+\label{tab:cifar10}
+\begin{tabular}{lccccc}
+\toprule
+\textbf{Depth} & \textbf{Baseline} & \textbf{LRS Low} & \textbf{LRS Mid} & \textbf{LRS High} & \textbf{ReZero} \\
+\midrule
+50  & 94.53$\pm$0.14 & \textbf{94.83$\pm$0.13} & 94.77$\pm$0.03 & 94.27$\pm$0.17 & 94.60$\pm$0.28 \\
+101 & 95.37$\pm$0.11 & \textbf{95.44$\pm$0.12} & 95.15$\pm$0.11 & 94.28$\pm$0.29 & 95.38$\pm$0.21 \\
+152 & 95.95$\pm$0.06 & 95.73$\pm$0.10 & 95.60$\pm$0.15 & 93.78$\pm$0.87 & \textbf{95.99$\pm$0.06} \\
+200 & 95.98$\pm$0.15 & \textbf{96.10$\pm$0.12} & 94.36$\pm$0.92 & 67.25$\pm$43.65 & 96.02$\pm$0.16 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{table}[t]
+\centering
+\caption{Test accuracy (\%) on CIFAR-100 (3-seed mean $\pm$ std). The progressive failure of LRS High is even more pronounced on this harder task.}
+\label{tab:cifar100}
+\begin{tabular}{lccccc}
+\toprule
+\textbf{Depth} & \textbf{Baseline} & \textbf{LRS Low} & \textbf{LRS Mid} & \textbf{LRS High} & \textbf{ReZero} \\
+\midrule
+50  & 77.18$\pm$0.36 & 77.02$\pm$0.20 & 76.72$\pm$0.40 & 75.22$\pm$0.45 & 76.12$\pm$0.09 \\
+101 & \textbf{79.29$\pm$0.23} & 78.85$\pm$0.14 & 78.34$\pm$0.19 & 75.16$\pm$1.69 & 78.04$\pm$0.48 \\
+152 & \textbf{80.42$\pm$0.22} & 80.28$\pm$0.38 & 78.57$\pm$0.60 & 71.66$\pm$3.40 & 79.72$\pm$0.10 \\
+200 & \textbf{80.72$\pm$0.17} & 80.65$\pm$0.01 & 76.07$\pm$1.59 & 37.50$\pm$29.20 & 80.14$\pm$0.17 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The results reveal a clear hierarchy of initialization safety:
+
+\textbf{LRS Low ($\alpha_0 \approx 0.12$)} performs on par with or slightly above the baseline at all depths, with low variance across seeds. It achieves the best result at depth 200 on CIFAR-10 (96.10\%) and near-best on CIFAR-100 (80.65\%).
+
+\textbf{LRS Mid ($\alpha_0 = 0.50$)} is stable at moderate depths but degrades at depth 200 (CIFAR-100: 76.07$\pm$1.59\%), with increasing variance signaling optimization instability.
+
+\textbf{LRS High ($\alpha_0 \approx 0.88$)} shows progressive degradation with depth, culminating in catastrophic failure at depth 200: 67.25$\pm$43.65\% on CIFAR-10 and 37.50$\pm$29.20\% on CIFAR-100. The enormous standard deviation indicates that some seeds fail completely while others partially recover.
+
+The mechanism of failure is clear from the gradient analysis (Equation~\ref{eq:total_grad}): with $\alpha_0 = 0.88$, the identity component of each gradient factor is only $1 - 0.88 = 0.12$. Through 66 blocks, the gradient preservation baseline is $0.12^{66}$, which is astronomically small, making learning impossible without rapid $\alpha$ adjustment. But rapid $\alpha$ adjustment itself requires gradients---creating a chicken-and-egg problem that leads to training collapse.
+
+\begin{figure}[t]
+    \centering
+    \includegraphics[width=0.85\linewidth]{figures/fig6_init_failure.pdf}
+    \caption{Accuracy across depths for three LRS initializations on CIFAR-100. LRS Low remains stable and competitive with the baseline at all depths. LRS High degrades progressively and collapses at depth 200.}
+    \label{fig:init_sensitivity}
+\end{figure}
+
+\subsection{Fixed vs.\ Learned Alpha}
+\label{sec:fixed_alpha}
+
+To validate that \emph{learning} $\alpha$ is essential---not just using a small fixed value---we compare learned LRS with fixed-$\alpha$ variants at depth 152 on CIFAR-100.
+
+\begin{table}[t]
+\centering
+\caption{Fixed $\alpha$ vs.\ learned $\alpha$ at depth 152 on CIFAR-100. A fixed value, even if close to the learned mean, cannot match the performance of per-block learning.}
+\label{tab:fixed_alpha}
+\begin{tabular}{lcc}
+\toprule
+\textbf{Configuration} & \textbf{Accuracy (\%)} & \textbf{Notes} \\
+\midrule
+Learned (LRS Low) & \textbf{80.28} & Per-block $\alpha$, mean $\approx 0.13$ \\
+Fixed $\alpha = 0.1$ & 79.81 & Close to learned mean \\
+Fixed $\alpha = 0.3$ & 67.94 & Moderate transformation \\
+Fixed $\alpha = 0.5$ & 44.19 & Standard ResNet ratio \\
+Fixed $\alpha = 0.7$ & 20.62 & Residual-favoring \\
+\midrule
+Baseline ($\alpha = 0.5$ implicit) & 80.42 & Standard ResNet (no LRS) \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The results are striking. First, $\alpha = 0.5$ (the standard ResNet ratio, applied uniformly with the complementary identity scaling) yields only 44.19\%, far worse than the baseline's 80.42\%. This is because the fixed-$\alpha$ formulation $y = 0.5 F(x) + 0.5 x$ explicitly halves both branches, unlike the standard ResNet's $y = F(x) + x$ which preserves full scale. This confirms that the LRS formulation is meaningful only when $\alpha$ is learned or set to a small value.
+
+Second, even fixed $\alpha = 0.1$, which is close to the learned mean of 0.13, underperforms the learned variant by 0.47\%. This gap arises because learned LRS assigns high $\alpha$ to downsampling blocks (0.42--0.96) while keeping normal blocks near zero. A uniform fixed value cannot capture this heterogeneous structure.
+
+\begin{figure}[t]
+    \centering
+    \includegraphics[width=0.85\linewidth]{figures/fig7_fixed_alpha.pdf}
+    \caption{Accuracy as a function of fixed $\alpha$ at depth 152, CIFAR-100. The learned per-block $\alpha$ (dashed line) outperforms all fixed values, demonstrating that the heterogeneous block-wise structure is essential.}
+    \label{fig:fixed_vs_learned}
+\end{figure}
+
+\subsection{Identity Initialization Analysis}
+\label{sec:identity_init}
+
+A natural hypothesis is that the low effective depth observed with LRS might be an artifact of the standard He initialization, which initializes the residual branch with random weights rather than an identity-preserving mapping. If the residual branch started as an identity transformation (providing a ``better starting point''), would the network choose to use more blocks?
+
+To test this, we compare standard He initialization with partial and full identity initialization schemes. HybridA initializes layers 3 and 4 (the deeper stages) with identity-preserving weights while keeping He initialization for layers 1 and 2. We also test full identity initialization across all layers. Table~\ref{tab:identity_init} presents the results on CIFAR-100.
+
+\begin{table}[t]
+\centering
+\caption{Effect of identity initialization on accuracy and learned $\alpha$ (CIFAR-100, 3-seed mean $\pm$ std). Full identity initialization catastrophically fails, while partial identity (HybridA) + LRS achieves the best accuracy---yet the effective depth remains unchanged.}
+\label{tab:identity_init}
+\begin{tabular}{lcccc}
+\toprule
+\textbf{Model} & \textbf{d152 Acc (\%)} & \textbf{d200 Acc (\%)} & \textbf{$\alpha$ mean (d200)} & \textbf{Active blocks} \\
+\midrule
+Baseline (He init) & 80.42$\pm$0.18 & 80.72$\pm$0.13 & --- & --- \\
+LRS Low + He init & 80.28$\pm$0.31 & 80.65$\pm$0.01 & 0.114 & 5 / 66 \\
+HybridA (Identity L3,4) & 80.02$\pm$0.26 & 80.40$\pm$0.17 & --- & --- \\
+LRS Low + HybridA & \textbf{80.72$\pm$0.29} & \textbf{81.14$\pm$0.18} & 0.118 & 6 / 66 \\
+ResNet (Full Identity) & 13.41$\pm$0.41 & 12.98$\pm$0.16 & --- & --- \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Several findings emerge from this experiment:
+
+\textbf{Full identity initialization catastrophically fails.} When all residual branches are initialized as identity transformations, the network collapses to near-random performance (12.98\% at depth 200). Without the diversity provided by random initialization, the network cannot break symmetry and learn meaningful features.
+
+\textbf{Partial identity initialization improves accuracy.} The combination of HybridA (identity initialization for the deeper stages 3 and 4) with LRS achieves the best accuracy across all configurations: 81.14\% at depth 200, surpassing both the standard baseline (80.72\%) and standard LRS Low (80.65\%).
+
+\textbf{Effective depth is invariant to initialization.} Despite the improved accuracy, the learned $\alpha$ values are nearly identical between standard and identity initialization: 0.114 vs.\ 0.118 mean $\alpha$, with 5 vs.\ 6 active blocks (out of 66). The network converges to the same effective depth regardless of how the residual branch is initialized.
+
+This result is significant because it rules out the hypothesis that low effective depth is an artifact of poor initialization. Even when the residual branch is initialized to perform identity transformations---providing a better starting point for learning useful transformations---the network converges to the same effective depth. This suggests that the low effective depth reflects the network's \emph{genuine preference}, not a limitation imposed by initialization.
+
+\subsection{Block Pruning Validation}
+\label{sec:pruning}
+
+To directly validate that low-$\alpha$ blocks are genuinely redundant, we perform two pruning experiments. First, blocks with $\alpha$ below a threshold are replaced with identity mappings and accuracy is measured without retraining. Second, we apply 10 epochs of fine-tuning after pruning to allow the remaining blocks to adapt. Each bottleneck block comprises 6 layers (three convolutions and three batch normalizations).
+
+\begin{table}[t]
+\centering
+\caption{Block pruning results on CIFAR-100 (ResNet-200, 66 blocks). ``No FT'' removes blocks and evaluates immediately; ``With FT'' applies 10 epochs of fine-tuning after removal.}
+\label{tab:pruning}
+\begin{tabular}{lcccccc}
+\toprule
+\textbf{Threshold} & \textbf{Removed} & \textbf{Layers} & \textbf{Kept} & \textbf{No FT} & \textbf{With FT} & $\mathbf{\Delta}$ \\
+\midrule
+None (original) & 0 & 0 & 66 & 80.54\% & --- & --- \\
+$\alpha < 0.03$ & 2 (3\%) & 12 & 64 & 80.54\% & --- & \textbf{0.00} \\
+$\alpha < 0.05$ & 10 (15\%) & 60 & 56 & 73.88\% & 79.53\% & \textbf{$-$1.01} \\
+$\alpha < 0.08$ & 37 (56\%) & 222 & 29 & 3.97\% & 76.22\% & $-$4.32 \\
+$\alpha < 0.10$ & 48 (73\%) & 288 & 18 & 3.13\% & 74.83\% & $-$5.71 \\
+$\alpha < 0.15$ & 58 (88\%) & 348 & 8 & 3.63\% & 72.64\% & $-$7.90 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The results reveal two important findings. First, blocks with $\alpha < 0.03$ are genuinely inactive: removing 2 blocks (12 layers) causes \textbf{zero accuracy loss}, confirming that $\alpha$ accurately identifies redundant blocks.
+
+Second, fine-tuning dramatically improves recovery. Without fine-tuning, removing 15\% of blocks ($\alpha < 0.05$) drops accuracy by 6.66\%; with just 10 epochs of fine-tuning, the loss reduces to only \textbf{1.01\%}. Even removing 56\% of blocks recovers to 76.22\% (from 80.54\%), and removing 73\% still yields 74.83\%. This demonstrates that the network's computation is highly distributed: while individual low-$\alpha$ blocks contribute little, fine-tuning allows the remaining blocks to compensate, confirming the ensemble interpretation of Veit et al.~\cite{veit2016residual}.
+
+\begin{figure}[t]
+    \centering
+    \includegraphics[width=\linewidth]{figures/fig11_pruning.pdf}
+    \caption{Block pruning results for ResNet-200 on CIFAR-100. Left: without fine-tuning, only $\alpha < 0.03$ blocks can be removed safely. Right: with 10 epochs of fine-tuning, up to 15\% of blocks can be removed with less than 1\% accuracy loss, and even 56\% removal recovers to 76\%.}
+    \label{fig:pruning}
+\end{figure}
+
+\subsection{Comparison with Existing Methods}
+\label{sec:comparison_methods}
+
+We compare LRS with established residual scaling methods at depth 152 on CIFAR-100, using 3 seeds for all methods (Table~\ref{tab:method_comparison}).
+
+\begin{table}[t]
+\centering
+\caption{Comparison with existing residual scaling methods (depth 152, CIFAR-100, 3-seed mean). All methods achieve similar accuracy, confirming that the value of LRS lies in its analytical capability rather than performance gains.}
+\label{tab:method_comparison}
+\begin{tabular}{lc}
+\toprule
+\textbf{Method} & \textbf{Accuracy (\%)} \\
+\midrule
+LayerScale & \textbf{80.56} \\
+Baseline & 80.42 \\
+LRS Low & 80.28 \\
+Fixup & 79.79 \\
+SkipInit / ReZero & 79.72 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+All methods perform within a narrow 0.84\% band, with LayerScale slightly leading. This result is important for two reasons:
+
+First, it confirms that LRS does not sacrifice performance to gain analytical capability. LRS Low achieves accuracy within 0.14\% of the baseline while providing interpretable per-block $\alpha$ values.
+
+Second, the similarity in performance across methods supports the view that the specific scaling mechanism matters less than the principle of identity-favoring initialization. ReZero (starting from $\alpha = 0$), SkipInit, and LRS Low (starting from $\alpha \approx 0.12$) all start near identity and achieve comparable results.
+
+\begin{figure}[t]
+    \centering
+    \includegraphics[width=0.85\linewidth]{figures/fig9_comparison.pdf}
+    \caption{Accuracy comparison of residual scaling methods at depth 152 on CIFAR-100. All methods perform similarly, but only LRS provides interpretable per-block ratios between $F(x)$ and $x$.}
+    \label{fig:method_comparison}
+\end{figure}
+
+\subsection{ImageNet Validation}
+\label{sec:imagenet}
+
+To validate our findings at scale, we train ResNet-50 on ImageNet with LRS variants (Table~\ref{tab:imagenet}).
+
+\begin{table}[t]
+\centering
+\caption{ImageNet validation accuracy with ResNet-50. Top-1 and Top-5 accuracy are reported.}
+\label{tab:imagenet}
+\begin{tabular}{lcc}
+\toprule
+\textbf{Model} & \textbf{Top-1 (\%)} & \textbf{Top-5 (\%)} \\
+\midrule
+Baseline & \textbf{75.86} & \textbf{92.92} \\
+LRS High & 75.73 & 92.74 \\
+LRS Mid & 75.62 & 92.73 \\
+ReZero & 75.36 & 92.44 \\
+LRS Low & 73.75 & 91.86 \\
+LRS+HybridA Low & 72.32 & 91.02 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+On ImageNet, the baseline achieves the highest accuracy, with LRS variants trailing by 0.13--3.54\%. Notably, LRS High achieves 75.73\% on ImageNet (depth 50), nearly matching the baseline. This contrasts sharply with its catastrophic failure on CIFAR at depth 200 (37.50\%), confirming that the initialization sensitivity is depth-dependent rather than an inherent flaw of the high-$\alpha$ initialization. This performance gap, particularly for LRS Low, merits discussion. At depth 50 (16 blocks), the network's effective depth is already close to its nominal depth ($\alpha \approx 0.34$), meaning that reducing block contributions via LRS provides less benefit and may constrain the network's capacity. The stronger effect of LRS at greater depths (as seen on CIFAR with ResNet-200) suggests that LRS is most valuable as an analytical and training stabilization tool for very deep networks.
+
+The $\alpha$ convergence patterns on ImageNet are consistent with CIFAR findings: LRS Low converges to mean $\alpha$ values similar to those observed on CIFAR at the same depth, further supporting the data-independence of the depth--$\alpha$ relationship.
+
+\begin{figure}[t]
+    \centering
+    \includegraphics[width=0.85\linewidth]{figures/fig10_imagenet.pdf}
+    \caption{ImageNet validation results with ResNet-50. The baseline leads in accuracy, but the converged $\alpha$ patterns are consistent with CIFAR findings, confirming the generality of the depth--$\alpha$ relationship.}
+    \label{fig:imagenet}
+\end{figure}
+
+%% ============================================================
+\section{Discussion}
+\label{sec:discussion}
+
+\subsection{ResNets Self-Select Their Depth}
+
+The central finding of this work is that deep ResNets do not use their full depth. A 200-layer network (66 blocks) trained with LRS concentrates its transformations in 5--6 blocks---primarily at stage boundaries---and reduces the remaining 60 blocks to near-identity operations. The network has autonomously chosen an effective depth of roughly 8\% of its nominal depth.
+
+The conventional view is that skip connections ``solve'' the degradation problem by enabling gradient flow through deep networks. Our gradient analysis (Figure~\ref{fig:gradient_flow}) confirms that skip connections do stabilize gradient flow: a plain network without skip connections exhibits gradient explosion exceeding $10^{13}$ in early blocks, while ResNet maintains gradients within a manageable range across all 66 blocks. However, LRS reveals that the network uses this stability not to leverage deep computation, but to \emph{bypass} most of its blocks. The near-zero gradients in later blocks of LRS Low (gradient norm $0.6$ at Block~65) reflect $\alpha \approx 0$---the network has chosen not to train these blocks at all.
+
+Furthermore, our identity initialization experiments (Section~\ref{sec:identity_init}) demonstrate that this behavior is not an artifact of poor initialization. Even when the residual branch is initialized as an identity transformation---providing a theoretically better starting point for learning---the network converges to the same effective depth (5--6 active blocks out of 66, mean $\alpha \approx 0.11$--$0.12$). This invariance across initialization schemes strongly suggests that the low effective depth reflects the network's genuine architectural preference.
+
+These observations lead to a reinterpretation of the degradation problem: degradation is not a ``problem to be solved'' but a natural consequence of the network selecting its optimal depth. Skip connections provide the \emph{mechanism} for this self-selection by enabling blocks to act as near-identity operations without disrupting gradient flow. The network does not degrade because it fails to use its depth; rather, it succeeds precisely \emph{because} it can choose not to use unnecessary depth.
+
+This finding resonates with the ``unrolled iterative estimation'' view of residual networks~\cite{greff2017highway} and the path ensemble interpretation~\cite{veit2016residual}. Our contribution is to make this self-selection \emph{directly observable} through the learned $\alpha$ values, rather than inferring it indirectly from path analysis or ablation studies.
+
+\subsection{The Role of Downsampling Blocks}
+
+The per-block analysis reveals that not all blocks are equal. Downsampling blocks (at stage boundaries) maintain high $\alpha$ values (0.42--0.96), indicating that spatial and channel dimension changes are essential transformations that cannot be bypassed. In contrast, the many within-stage blocks contribute minimally.
+
+This suggests a design principle: \textbf{the number of stages (and thus downsampling operations) may matter more than the total number of blocks}. A network with 4 stages of 2 blocks each might capture most of the effective computation that a 66-block network performs.
+
+\subsection{Why Does Standard ResNet Still Work Well?}
+
+A natural question is: if the optimal $\alpha$ is much less than 0.5, why does the standard ResNet (implicit $\alpha = 0.5$ in the LRS view) perform so well? The answer lies in an important distinction. Standard ResNet uses $y = F(x) + x$, which does not constrain the relative scale of $F(x)$ and $x$. Through batch normalization and weight magnitude adjustment, the network can effectively achieve a small $\|F(x)\|/\|x\|$ ratio without an explicit $\alpha$ parameter. LRS makes this implicit ratio explicit and observable.
+
+Indeed, He et al.~\cite{he2016identity} and De and Smith~\cite{de2020batch} have shown that batch normalization biases residual blocks toward small $F(x)$, effectively implementing a form of identity preference without learnable scaling. LRS confirms and quantifies this phenomenon.
+
+\subsection{Practical Implications}
+
+Our findings suggest several practical guidelines:
+
+\begin{enumerate}
+    \item \textbf{Identity-favoring initialization is essential.} When using any form of residual scaling, starting near identity ($\alpha_0 \leq 0.12$) is safe across all depths. Residual-favoring initialization should be avoided.
+    \item \textbf{Depth efficiency.} The observation that only $\sim$8\% of blocks are actively used suggests significant potential for model compression at inference time, by pruning or simplifying near-identity blocks.
+    \item \textbf{Architecture search guidance.} The heterogeneous $\alpha$ distribution (high at boundaries, low within stages) can inform neural architecture search: allocate capacity at stage transitions rather than adding more within-stage blocks.
+\end{enumerate}
+
+\subsection{Limitations}
+
+This study has several limitations. First, ImageNet experiments are limited to ResNet-50; deeper ImageNet models (ResNet-101/152) would provide stronger validation of the depth--$\alpha$ relationship at scale. Second, LRS adds one parameter per block and slightly modifies the optimization landscape; the learned $\alpha$ values reflect this modified landscape rather than the standard ResNet's implicit preferences. Third, our analysis is restricted to bottleneck ResNets and may not directly apply to other architectures (e.g., Vision Transformers, where LayerScale serves a similar role). Fourth, the effective depth threshold ($\alpha > 0.3$) is somewhat arbitrary; different thresholds would yield different effective depth estimates, though the qualitative conclusion---that most blocks are near-identity---is robust.
+
+%% ============================================================
+\section{Conclusion}
+\label{sec:conclusion}
+
+We introduced Learnable Residual Scaling (LRS) as an analytical tool to observe how deep residual networks distribute computation across their blocks. Through systematic experiments spanning four depths, two CIFAR datasets, and ImageNet, with three seeds per configuration, we demonstrated that:
+
+\begin{enumerate}
+    \item Deep ResNets autonomously select a much shallower effective depth than their nominal depth. In a 200-layer network, only 5--6 out of 66 blocks maintain meaningful transformations; the rest serve as near-identity bypasses.
+    \item The mean learned $\alpha$ decreases systematically with depth ($\alpha \approx 0.35$ at depth 50, $\alpha \approx 0.11$ at depth 200), and this pattern is largely dataset-independent, reflecting an intrinsic architectural property.
+    \item Active blocks are concentrated at stage boundaries (downsampling operations), while within-stage blocks are progressively reduced to identity, suggesting that depth at stage transitions matters more than total depth.
+    \item Initialization that respects this identity preference is a necessary condition for training success at extreme depth; violating it causes catastrophic collapse.
+    \item Gradient analysis reveals that skip connections stabilize gradient flow, but the network uses this stability to bypass---rather than leverage---most of its blocks, with later blocks showing near-zero gradients reflecting $\alpha \approx 0$.
+    \item Identity initialization experiments confirm that the low effective depth is not an artifact of initialization: even with identity-preserving residual branches, the network converges to the same effective depth (5--6 active blocks out of 66), demonstrating that this is a genuine architectural preference.
+\end{enumerate}
+
+These findings provide a new perspective on residual network depth: rather than asking ``how deep should we make the network,'' the relevant question may be ``how many stage transitions does the task require.'' The degradation problem is not a failure to be solved but a natural consequence of the network selecting its optimal depth. Skip connections provide the mechanism for this self-selection, and LRS makes it visible.
+
+Future work includes extending LRS analysis to deeper ImageNet models, exploring per-stage $\alpha$ sharing as a lightweight alternative, applying the effective depth concept to model compression, and investigating whether similar depth self-selection occurs in Transformer architectures.
+
+%% ============================================================
+\section*{CRediT Authorship Contribution Statement}
+\textbf{Jinho Ju}: Conceptualization, Methodology, Software, Validation, Formal analysis, Investigation, Writing -- Original Draft, Visualization.
+
+\section*{Declaration of Competing Interest}
+The author declares no competing interests.
+
+\section*{Data and Code Availability}
+All code, trained models, and experimental results are publicly available at \url{https://github.com/Wlsghdh/Learnable_Residual_Scaling}.
+
+%% ============================================================
+\bibliographystyle{cas-model2-names}
+
+\begin{thebibliography}{12}
+\expandafter\ifx\csname natexlab\endcsname\relax\def\natexlab#1{#1}\fi
+\providecommand{\url}[1]{\texttt{#1}}
+\providecommand{\href}[2]{#2}
+\providecommand{\path}[1]{#1}
+\providecommand{\DOIprefix}{doi:}
+\providecommand{\bibinfo}[2]{#2}
+
+\bibitem[{He et~al.(2016a)}]{he2016deep}
+\bibinfo{author}{K.~He}, \bibinfo{author}{X.~Zhang}, \bibinfo{author}{S.~Ren}, \bibinfo{author}{J.~Sun},
+\bibinfo{year}{2016}a.
+\bibinfo{title}{Deep residual learning for image recognition}.
+\newblock In: \bibinfo{booktitle}{Proceedings of the IEEE Conference on Computer Vision and Pattern Recognition (CVPR)}, pp.~\bibinfo{pages}{770--778}.
+
+\bibitem[{He et~al.(2016b)}]{he2016identity}
+\bibinfo{author}{K.~He}, \bibinfo{author}{X.~Zhang}, \bibinfo{author}{S.~Ren}, \bibinfo{author}{J.~Sun},
+\bibinfo{year}{2016}b.
+\bibinfo{title}{Identity mappings in deep residual networks}.
+\newblock In: \bibinfo{booktitle}{European Conference on Computer Vision (ECCV)}, pp.~\bibinfo{pages}{630--645}.
+
+\bibitem[{Bachlechner et~al.(2021)}]{bachlechner2021rezero}
+\bibinfo{author}{T.~Bachlechner}, \bibinfo{author}{B.P.~Majumder}, \bibinfo{author}{H.H.~Mao}, \bibinfo{author}{G.W.~Cottrell}, \bibinfo{author}{J.~McAuley},
+\bibinfo{year}{2021}.
+\bibinfo{title}{ReZero is all you need: Fast convergence at large depth}.
+\newblock In: \bibinfo{booktitle}{Uncertainty in Artificial Intelligence (UAI)}, pp.~\bibinfo{pages}{1352--1361}.
+
+\bibitem[{De and Smith(2020)}]{de2020batch}
+\bibinfo{author}{S.~De}, \bibinfo{author}{S.L.~Smith},
+\bibinfo{year}{2020}.
+\bibinfo{title}{Batch normalization biases residual blocks towards the identity function in deep networks}.
+\newblock In: \bibinfo{booktitle}{Advances in Neural Information Processing Systems (NeurIPS)}, vol.~\bibinfo{volume}{33}.
+
+\bibitem[{Touvron et~al.(2021)}]{touvron2021going}
+\bibinfo{author}{H.~Touvron}, \bibinfo{author}{M.~Cord}, \bibinfo{author}{A.~Sablayrolles}, \bibinfo{author}{G.~Synnaeve}, \bibinfo{author}{H.~J\'{e}gou},
+\bibinfo{year}{2021}.
+\bibinfo{title}{Going deeper with image transformers}.
+\newblock In: \bibinfo{booktitle}{Proceedings of the IEEE/CVF International Conference on Computer Vision (ICCV)}, pp.~\bibinfo{pages}{32--42}.
+
+\bibitem[{Zhang et~al.(2019)}]{zhang2019fixup}
+\bibinfo{author}{H.~Zhang}, \bibinfo{author}{Y.N.~Dauphin}, \bibinfo{author}{T.~Ma},
+\bibinfo{year}{2019}.
+\bibinfo{title}{Fixup initialization: Residual learning without normalization}.
+\newblock In: \bibinfo{booktitle}{International Conference on Learning Representations (ICLR)}.
+
+\bibitem[{Veit et~al.(2016)}]{veit2016residual}
+\bibinfo{author}{A.~Veit}, \bibinfo{author}{M.J.~Wilber}, \bibinfo{author}{S.~Belongie},
+\bibinfo{year}{2016}.
+\bibinfo{title}{Residual networks behave like ensembles of relatively shallow networks}.
+\newblock In: \bibinfo{booktitle}{Advances in Neural Information Processing Systems (NeurIPS)}, vol.~\bibinfo{volume}{29}.
+
+\bibitem[{Srivastava et~al.(2015)}]{srivastava2015highway}
+\bibinfo{author}{R.K.~Srivastava}, \bibinfo{author}{K.~Greff}, \bibinfo{author}{J.~Schmidhuber},
+\bibinfo{year}{2015}.
+\bibinfo{title}{Highway networks}.
+\newblock \href{http://arxiv.org/abs/1505.00387}{\tt arXiv:1505.00387}.
+
+\bibitem[{Greff et~al.(2017)}]{greff2017highway}
+\bibinfo{author}{K.~Greff}, \bibinfo{author}{R.K.~Srivastava}, \bibinfo{author}{J.~Schmidhuber},
+\bibinfo{year}{2017}.
+\bibinfo{title}{Highway and residual networks learn unrolled iterative estimation}.
+\newblock In: \bibinfo{booktitle}{International Conference on Learning Representations (ICLR)}.
+
+\bibitem[{Huang et~al.(2016)}]{huang2016deep}
+\bibinfo{author}{G.~Huang}, \bibinfo{author}{Y.~Sun}, \bibinfo{author}{Z.~Liu}, \bibinfo{author}{D.~Sedra}, \bibinfo{author}{K.Q.~Weinberger},
+\bibinfo{year}{2016}.
+\bibinfo{title}{Deep networks with stochastic depth}.
+\newblock In: \bibinfo{booktitle}{European Conference on Computer Vision (ECCV)}, pp.~\bibinfo{pages}{646--661}.
+
+\bibitem[{Frankle and Carlin(2019)}]{frankle2019lottery}
+\bibinfo{author}{J.~Frankle}, \bibinfo{author}{M.~Carlin},
+\bibinfo{year}{2019}.
+\bibinfo{title}{The lottery ticket hypothesis: Finding sparse, trainable neural networks}.
+\newblock In: \bibinfo{booktitle}{International Conference on Learning Representations (ICLR)}.
+
+\bibitem[{Huang et~al.(2017)}]{huang2017densely}
+\bibinfo{author}{G.~Huang}, \bibinfo{author}{Z.~Liu}, \bibinfo{author}{L.~van~der~Maaten}, \bibinfo{author}{K.Q.~Weinberger},
+\bibinfo{year}{2017}.
+\bibinfo{title}{Densely connected convolutional networks}.
+\newblock In: \bibinfo{booktitle}{Proceedings of the IEEE Conference on Computer Vision and Pattern Recognition (CVPR)}, pp.~\bibinfo{pages}{4700--4708}.
+
+\end{thebibliography}
+
+\end{document}

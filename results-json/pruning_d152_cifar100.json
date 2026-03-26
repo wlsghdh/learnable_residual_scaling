@@ -1,0 +1,88 @@
+{
+  "depth": 152,
+  "dataset": "cifar100",
+  "seed": 42,
+  "checkpoint": "checkpoints/lrs_low_depth152_cifar100_seed42_best.pth",
+  "results": [
+    {
+      "threshold": 0.0,
+      "pruned": 0,
+      "total": 50,
+      "kept": 50,
+      "pct_removed": 0.0,
+      "accuracy": 80.55
+    },
+    {
+      "threshold": 0.03,
+      "pruned": 2,
+      "total": 50,
+      "kept": 48,
+      "pct_removed": 4.0,
+      "accuracy": 80.53
+    },
+    {
+      "threshold": 0.05,
+      "pruned": 11,
+      "total": 50,
+      "kept": 39,
+      "pct_removed": 22.0,
+      "accuracy": 71.49
+    },
+    {
+      "threshold": 0.08,
+      "pruned": 26,
+      "total": 50,
+      "kept": 24,
+      "pct_removed": 52.0,
+      "accuracy": 20.52
+    },
+    {
+      "threshold": 0.1,
+      "pruned": 29,
+      "total": 50,
+      "kept": 21,
+      "pct_removed": 57.99999999999999,
+      "accuracy": 16.06
+    },
+    {
+      "threshold": 0.12,
+      "pruned": 33,
+      "total": 50,
+      "kept": 17,
+      "pct_removed": 66.0,
+      "accuracy": 12.559999999999999
+    },
+    {
+      "threshold": 0.15,
+      "pruned": 39,
+      "total": 50,
+      "kept": 11,
+      "pct_removed": 78.0,
+      "accuracy": 5.87
+    },
+    {
+      "threshold": 0.2,
+      "pruned": 43,
+      "total": 50,
+      "kept": 7,
+      "pct_removed": 86.0,
+      "accuracy": 3.06
+    },
+    {
+      "threshold": 0.3,
+      "pruned": 45,
+      "total": 50,
+      "kept": 5,
+      "pct_removed": 90.0,
+      "accuracy": 3.1
+    },
+    {
+      "threshold": 0.5,
+      "pruned": 49,
+      "total": 50,
+      "kept": 1,
+      "pct_removed": 98.0,
+      "accuracy": 1.8499999999999999
+    }
+  ]
+}

@@ -1,0 +1,86 @@
+{
+  "depth": 152,
+  "dataset": "cifar100",
+  "seed": 42,
+  "original_acc": 80.55,
+  "finetune_epochs": 10,
+  "finetune_lr": 0.001,
+  "results": [
+    {
+      "threshold": 0.0,
+      "pruned": 0,
+      "total": 50,
+      "kept": 50,
+      "layers_removed": 0,
+      "pct_removed": 0,
+      "acc_before_ft": 80.55,
+      "acc_after_ft": 80.55
+    },
+    {
+      "threshold": 0.05,
+      "pruned": 11,
+      "total": 50,
+      "kept": 39,
+      "layers_removed": 66,
+      "pct_removed": 22.0,
+      "acc_before_ft": 71.49,
+      "acc_after_ft": 79.64,
+      "finetune_time": 1272.4835331439972
+    },
+    {
+      "threshold": 0.08,
+      "pruned": 26,
+      "total": 50,
+      "kept": 24,
+      "layers_removed": 156,
+      "pct_removed": 52.0,
+      "acc_before_ft": 20.52,
+      "acc_after_ft": 75.81,
+      "finetune_time": 1277.9202699661255
+    },
+    {
+      "threshold": 0.1,
+      "pruned": 29,
+      "total": 50,
+      "kept": 21,
+      "layers_removed": 174,
+      "pct_removed": 57.99999999999999,
+      "acc_before_ft": 16.06,
+      "acc_after_ft": 75.27000000000001,
+      "finetune_time": 1340.725688457489
+    },
+    {
+      "threshold": 0.12,
+      "pruned": 33,
+      "total": 50,
+      "kept": 17,
+      "layers_removed": 198,
+      "pct_removed": 66.0,
+      "acc_before_ft": 12.559999999999999,
+      "acc_after_ft": 75.13,
+      "finetune_time": 1308.2765777111053
+    },
+    {
+      "threshold": 0.15,
+      "pruned": 39,
+      "total": 50,
+      "kept": 11,
+      "layers_removed": 234,
+      "pct_removed": 78.0,
+      "acc_before_ft": 5.87,
+      "acc_after_ft": 74.26,
+      "finetune_time": 1282.1416053771973
+    },
+    {
+      "threshold": 0.2,
+      "pruned": 43,
+      "total": 50,
+      "kept": 7,
+      "layers_removed": 258,
+      "pct_removed": 86.0,
+      "acc_before_ft": 3.06,
+      "acc_after_ft": 69.54,
+      "finetune_time": 1269.2144134044647
+    }
+  ]
+}

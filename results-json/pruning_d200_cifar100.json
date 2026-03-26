@@ -1,0 +1,88 @@
+{
+  "depth": 200,
+  "dataset": "cifar100",
+  "seed": 42,
+  "checkpoint": "checkpoints/lrs_low_depth200_cifar100_seed42_best.pth",
+  "results": [
+    {
+      "threshold": 0.0,
+      "pruned": 0,
+      "total": 66,
+      "kept": 66,
+      "pct_removed": 0.0,
+      "accuracy": 80.54
+    },
+    {
+      "threshold": 0.03,
+      "pruned": 2,
+      "total": 66,
+      "kept": 64,
+      "pct_removed": 3.0303030303030303,
+      "accuracy": 80.54
+    },
+    {
+      "threshold": 0.05,
+      "pruned": 10,
+      "total": 66,
+      "kept": 56,
+      "pct_removed": 15.151515151515152,
+      "accuracy": 73.88
+    },
+    {
+      "threshold": 0.08,
+      "pruned": 37,
+      "total": 66,
+      "kept": 29,
+      "pct_removed": 56.060606060606055,
+      "accuracy": 3.9699999999999998
+    },
+    {
+      "threshold": 0.1,
+      "pruned": 48,
+      "total": 66,
+      "kept": 18,
+      "pct_removed": 72.72727272727273,
+      "accuracy": 3.1300000000000003
+    },
+    {
+      "threshold": 0.12,
+      "pruned": 51,
+      "total": 66,
+      "kept": 15,
+      "pct_removed": 77.27272727272727,
+      "accuracy": 2.81
+    },
+    {
+      "threshold": 0.15,
+      "pruned": 58,
+      "total": 66,
+      "kept": 8,
+      "pct_removed": 87.87878787878788,
+      "accuracy": 3.63
+    },
+    {
+      "threshold": 0.2,
+      "pruned": 60,
+      "total": 66,
+      "kept": 6,
+      "pct_removed": 90.9090909090909,
+      "accuracy": 3.64
+    },
+    {
+      "threshold": 0.3,
+      "pruned": 60,
+      "total": 66,
+      "kept": 6,
+      "pct_removed": 90.9090909090909,
+      "accuracy": 3.64
+    },
+    {
+      "threshold": 0.5,
+      "pruned": 65,
+      "total": 66,
+      "kept": 1,
+      "pct_removed": 98.48484848484848,
+      "accuracy": 2.48
+    }
+  ]
+}

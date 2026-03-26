@@ -10,6 +10,7 @@ from torch.optim.lr_scheduler import CosineAnnealingLR, LinearLR, SequentialLR
 import numpy as np
 from tqdm import tqdm
 import time
+import os
 
 from config import CONFIG, get_training_config
 from models import count_parameters
@@ -58,6 +59,7 @@ class Trainer:
         }
         self.best_acc = 0.0
         self.best_epoch = 0
+        self.save_checkpoint = os.environ.get('SAVE_CHECKPOINT', '0') == '1'
     
     def _setup_scheduler(self):
         """Warmup + Cosine Annealing"""
@@ -170,6 +172,13 @@ class Trainer:
             if test_acc > self.best_acc:
                 self.best_acc = test_acc
                 self.best_epoch = epoch
+                # Checkpoint 저장 (save_checkpoint=True일 때)
+                if getattr(self, 'save_checkpoint', False) and experiment_name:
+                    import os
+                    ckpt_dir = os.path.join('checkpoints')
+                    os.makedirs(ckpt_dir, exist_ok=True)
+                    ckpt_path = os.path.join(ckpt_dir, f'{experiment_name}_best.pth')
+                    torch.save(self.model.state_dict(), ckpt_path)
             
             pbar.set_postfix({
                 'train': f'{train_acc:.4f}',
