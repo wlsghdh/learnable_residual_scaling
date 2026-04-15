@@ -315,6 +315,51 @@ class PerChannelLRSBottleneck(nn.Module):
         return out
 
 
+class HighwayBottleneck(nn.Module):
+    """Highway-style Bottleneck (Srivastava et al., 2015)
+    y = T(x)·F(x) + (1−T(x))·x,  T(x) = sigmoid(W_g·GAP(x) + b_g)
+    Input-dependent gate vs LRS's input-independent scalar.
+    GAP(x)를 써서 spatial dimension을 처리하고,
+    gate는 per-block scalar로 출력하여 LRS와 공정 비교.
+    """
+    expansion = 4
+
+    def __init__(self, in_channels, out_channels, stride=1, downsample=None,
+                 init_bias=-2.0, **kwargs):
+        super().__init__()
+        self.conv1 = nn.Conv2d(in_channels, out_channels, 1, bias=False)
+        self.bn1 = nn.BatchNorm2d(out_channels)
+        self.conv2 = nn.Conv2d(out_channels, out_channels, 3, stride, 1, bias=False)
+        self.bn2 = nn.BatchNorm2d(out_channels)
+        self.conv3 = nn.Conv2d(out_channels, out_channels * self.expansion, 1, bias=False)
+        self.bn3 = nn.BatchNorm2d(out_channels * self.expansion)
+        self.relu = nn.ReLU(inplace=True)
+        self.downsample = downsample
+
+        # Highway gate: input-dependent scalar
+        # GAP → Linear → Sigmoid で per-block scalar gate を生成
+        gate_in_ch = in_channels
+        self.gate_fc = nn.Linear(gate_in_ch, 1)
+        nn.init.zeros_(self.gate_fc.weight)
+        nn.init.constant_(self.gate_fc.bias, init_bias)
+
+    def forward(self, x):
+        identity = x
+        out = self.relu(self.bn1(self.conv1(x)))
+        out = self.relu(self.bn2(self.conv2(out)))
+        out = self.bn3(self.conv3(out))
+        if self.downsample is not None:
+            identity = self.downsample(x)
+
+        # Input-dependent gate: GAP → FC → sigmoid
+        gate_input = x.mean(dim=[2, 3])  # (B, C)
+        alpha = torch.sigmoid(self.gate_fc(gate_input))  # (B, 1)
+        alpha = alpha.view(-1, 1, 1, 1)  # (B, 1, 1, 1)
+        out = alpha * out + (1 - alpha) * identity
+        out = self.relu(out)
+        return out
+
+
 class PlainBottleneck(nn.Module):
     """Plain Bottleneck (skip connection 없음)
     y = F(x)
@@ -416,6 +461,9 @@ class ResNet(nn.Module):
                 alphas.append(module.fixup_scale.item())
             elif hasattr(module, 'layer_scale') and isinstance(module.layer_scale, nn.Parameter):
                 alphas.extend(module.layer_scale.tolist())
+            elif hasattr(module, 'gate_fc') and isinstance(module, HighwayBottleneck):
+                # Highway: sigmoid(bias)를 default gate value로 보고
+                alphas.append(torch.sigmoid(module.gate_fc.bias).item())
 
         if alphas:
             return {
@@ -457,6 +505,21 @@ class ResNetFixup(ResNet):
         for module in self.modules():
             if isinstance(module, FixupBottleneck):
                 nn.init.zeros_(module.bn3.weight)
+
+
+class ResNetHighway(ResNet):
+    """Highway ResNet: he_init 후 gate_fc bias를 복원"""
+
+    def _init_weights(self):
+        for m in self.modules():
+            he_init(m)
+        # he_init이 gate_fc.bias를 0으로 리셋하므로,
+        # init_kwargs의 init_bias로 복원
+        init_bias = self.init_kwargs.get('init_bias', -2.0)
+        for module in self.modules():
+            if isinstance(module, HighwayBottleneck):
+                nn.init.zeros_(module.gate_fc.weight)
+                nn.init.constant_(module.gate_fc.bias, init_bias)
 
 
 class ResNetPlain(nn.Module):
@@ -906,6 +969,12 @@ def create_model(model_type, depth=50, num_classes=10):
                        init_kwargs={'init_scale': -2.0})
         model.model_name = f'PerChannelLRS_ResNet{depth}'
 
+    # Highway gate (input-dependent)
+    elif mt == 'highway':
+        model = ResNetHighway(HighwayBottleneck, layers, num_classes,
+                              init_kwargs={'init_bias': -2.0})
+        model.model_name = f'Highway_ResNet{depth}'
+
     # ── WRN-28-10 기반 ────────────────────────────────────────
     elif mt == 'wrn_baseline':
         model = WideResNet(28, 10, num_classes, variant='baseline')
@@ -988,6 +1057,8 @@ MODEL_TYPES = [
     'fixed_alpha_01', 'fixed_alpha_03', 'fixed_alpha_05', 'fixed_alpha_07',
     # Per-channel ablation
     'per_channel_lrs',
+    # Highway gate (input-dependent comparison)
+    'highway',
     # WRN-28-10
     'wrn_baseline', 'wrn_lrs_low', 'wrn_lrs_hybrida_low',
     'wrn_rezero', 'wrn_skipinit', 'wrn_layerscale',
@@ -1017,6 +1088,7 @@ MODEL_DESCRIPTIONS = {
     'fixed_alpha_05':       'Fixed α=0.5 (non-learnable ablation)',
     'fixed_alpha_07':       'Fixed α=0.7 (non-learnable ablation)',
     'per_channel_lrs':      'Per-channel LRS α_c',
+    'highway':              'Highway gate y=T(x)·F(x)+(1-T(x))·x, input-dependent',
     'wrn_baseline':         'WRN-28-10 Baseline',
     'wrn_lrs_low':          'WRN-28-10 LRS Low',
     'wrn_lrs_hybrida_low':  'WRN-28-10 LRS+HybridA Low',

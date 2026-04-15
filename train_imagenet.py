@@ -40,8 +40,12 @@ def parse_args():
     parser.add_argument('--model', type=str, required=True,
                         choices=['baseline', 'lrs_low', 'lrs_mid', 'lrs_high',
                                  'rezero', 'hybrida',
-                                 'lrs_ha_low', 'lrs_ha_mid', 'lrs_ha_high'],
+                                 'lrs_ha_low', 'lrs_ha_mid', 'lrs_ha_high',
+                                 'highway'],
                         help='모델 종류')
+    parser.add_argument('--depth', type=int, default=50,
+                        choices=[50, 101, 152, 200],
+                        help='ResNet depth (default: 50)')
     parser.add_argument('--data', type=str,
                         default='/nfs_share/datasets/ILSVRC2012',
                         help='ImageNet 데이터 경로')
@@ -181,7 +185,7 @@ def validate(model, loader, criterion, device, use_amp):
 
 
 def get_alpha_stats(model):
-    """학습된 α 통계 반환 (LRS 모델만)"""
+    """학습된 α 통계 반환 (LRS/ReZero/Highway 모델)"""
     alphas = []
     for module in model.modules():
         if hasattr(module, 'residual_scale'):
@@ -189,6 +193,9 @@ def get_alpha_stats(model):
         elif hasattr(module, 'alpha') and isinstance(module.alpha, nn.Parameter):
             if module.alpha.numel() == 1:
                 alphas.append(module.alpha.item())
+        elif hasattr(module, 'gate_fc') and hasattr(module, 'conv1'):
+            # Highway gate: sigmoid(bias) as default gate value
+            alphas.append(torch.sigmoid(module.gate_fc.bias).item())
     if not alphas:
         return None
     return {
@@ -218,7 +225,8 @@ def main():
 
     # 결과 파일 경로
     os.makedirs(args.output, exist_ok=True)
-    out_path = os.path.join(args.output, f'{args.model}_imagenet_result.json')
+    depth_suffix = f'_d{args.depth}' if args.depth != 50 else ''
+    out_path = os.path.join(args.output, f'{args.model}{depth_suffix}_imagenet_result.json')
     if os.path.exists(out_path):
         print(f'[SKIP] Result already exists: {out_path}')
         return
@@ -228,6 +236,7 @@ def main():
 
     print(f'=== ImageNet Training (Single GPU) ===')
     print(f'  Model: {model_type}')
+    print(f'  Depth: {args.depth}')
     print(f'  Device: {device}')
     if torch.cuda.is_available():
         print(f'  GPU: {torch.cuda.get_device_name(0)}')
@@ -240,7 +249,7 @@ def main():
     print()
 
     # 모델
-    model = create_model(model_type, depth=50, num_classes=1000)
+    model = create_model(model_type, depth=args.depth, num_classes=1000)
     model = model.to(device)
     print(f'  Model name: {model.model_name}')
     n_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
@@ -344,9 +353,9 @@ def main():
     alpha_final = get_alpha_stats(model)
 
     result = {
-        'name': f'{args.model}_imagenet',
+        'name': f'{args.model}_d{args.depth}_imagenet',
         'model_name': getattr(model, 'model_name', model_type),
-        'depth': 50,
+        'depth': args.depth,
         'dataset': 'imagenet',
         'results': {
             'best_acc': round(best_top1 / 100, 6),
