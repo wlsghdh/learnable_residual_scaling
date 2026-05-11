@@ -110,9 +110,15 @@ Fixup & $y = x + \alpha F(x)$ & $|F(x)|$ scale & Zero init last layer \\
 \end{tabular}
 \end{table}
 
+\subsection{Comparison with Highway Networks}
+
+A natural concern is whether LRS differs meaningfully from gated shortcuts proposed in Highway Networks~\cite{srivastava2015highway}, where $y = T(x)\cdot F(x) + (1 - T(x))\cdot x$ with $T(x) = \sigma(W_g x + b_g)$. The distinction is structural and central to our analysis. Highway's transform gate $T(x)$ is \emph{input-dependent}: every input produces a different gate value, so per-block usage cannot be summarized by a single number. LRS instead uses an \emph{input-independent scalar} $\alpha = \sigma(\theta)$, deliberately removing input dependency to obtain a per-block measurement. This is a methodological choice for interpretability, not a performance optimization: a single $\alpha$ per block makes ``how much does this block transform its input'' a well-defined quantity, enabling the depth--$\alpha$ scaling law, the per-block distribution analysis, and the pruning validation in Sections~\ref{sec:perblock}--\ref{sec:pruning}. Highway gates, by contrast, would require aggregating over input distributions to produce a comparable scalar---losing the very interpretability that motivates our design.
+
 \subsection{Effective Depth and Network Redundancy}
 
-The concept of effective depth has been explored from multiple angles. Huang et al.~\cite{huang2016deep} proposed stochastic depth, randomly dropping residual blocks during training, showing that not all blocks are needed. More recently, the lottery ticket hypothesis~\cite{frankle2019lottery} demonstrated that large networks contain small subnetworks that can match the full network's performance. Our work provides a complementary perspective: rather than pruning or dropping blocks, we let the network \emph{itself} reveal which blocks it considers essential, through the learned $\alpha$ values.
+The concept of effective depth has been explored from multiple angles. Huang et al.~\cite{huang2016deep} proposed stochastic depth, randomly dropping residual blocks during training, showing that not all blocks are needed. The lottery ticket hypothesis~\cite{frankle2019lottery} demonstrated that large networks contain small subnetworks that can match the full network's performance. The closest prior work is Veit et al.~\cite{veit2016residual}, which interpreted ResNets as ensembles of paths and showed empirically that effective paths are much shorter than the nominal depth.
+
+However, prior evidence is \emph{indirect}: path-ensemble analysis relies on counting paths of various lengths, and lesion studies infer importance by deleting blocks and measuring degradation. The question ``how much does block $i$ actually contribute'' is answered only inferentially.  Our work provides a \emph{direct, per-block, quantitative measurement} of the same phenomenon: the learned $\alpha_i$ values are themselves the blocks' contributions, observable without any post-hoc analysis. This direct measurability enables three things prior work could not provide: (i) a quantitative scaling law $\bar{\alpha}(L)$ relating mean usage to depth, (ii) a threshold-free effective-depth metric $D_\text{eff} = \sum_i \alpha_i$, and (iii) a principled pruning criterion ($\alpha$-thresholding) that we validate by showing $\alpha < 0.03$ blocks can be removed with zero accuracy loss (Section~\ref{sec:pruning}). LRS thus complements Veit et al.\ by replacing inference with observation.
 
 %% ============================================================
 \section{Method}
@@ -596,10 +602,13 @@ These observations lead to a reinterpretation of the degradation problem: degrad
 This finding resonates with the ``unrolled iterative estimation'' view of residual networks~\cite{greff2017highway} and the path ensemble interpretation~\cite{veit2016residual}. Our contribution is to make this self-selection \emph{directly observable} through the learned $\alpha$ values, rather than inferring it indirectly from path analysis or ablation studies.
 
 \subsection{The Role of Downsampling Blocks}
+\label{sec:downsampling_role}
 
-The per-block analysis reveals that not all blocks are equal. Downsampling blocks (at stage boundaries) maintain high $\alpha$ values (0.42--0.96), indicating that spatial and channel dimension changes are essential transformations that cannot be bypassed. In contrast, the many within-stage blocks contribute minimally.
+The per-block analysis reveals that not all blocks are equal. Downsampling blocks (at stage boundaries) maintain high $\alpha$ values (0.42--0.96), indicating that spatial and channel dimension changes are essential transformations that cannot be bypassed. In contrast, the many within-stage blocks contribute minimally---most converge to $\alpha < 0.15$, and $\alpha$ decreases progressively further from the downsampling point. The network treats each stage as ``one essential transformation (downsampling) followed by progressively negligible refinements.''
 
-This suggests a design principle: \textbf{the number of stages (and thus downsampling operations) may matter more than the total number of blocks}. A network with 4 stages of 2 blocks each might capture most of the effective computation that a 66-block network performs.
+This empirically grounds a design principle that has been implicit in many efficient architectures: \textbf{the number of stages (and thus downsampling operations) matters more than the total number of blocks per stage}. Three lines of prior work converge with this observation. (i) MobileNet~\cite{howard2017mobilenets} and EfficientNet~\cite{tan2019efficientnet} achieve strong accuracy with shallow per-stage block counts, distributing capacity across stages rather than within them. (ii) Stochastic Depth~\cite{huang2016deep} found that randomly dropping later within-stage blocks during training hurts performance far less than dropping stage-transition blocks. (iii) Neural architecture search literature~\cite{tan2019efficientnet} consistently allocates more channels at stage transitions than additional within-stage layers. LRS provides a per-block measurement that explains \emph{why} these design choices succeed: the within-stage blocks they remove are precisely the blocks our $\alpha$ values flag as near-identity.
+
+A practical corollary: when designing or scaling a residual network, increasing nominal depth $L$ within a fixed stage count yields rapidly diminishing returns. Our $D_\text{eff}$ measurements (Table~\ref{tab:deff}) make this explicit---quadrupling blocks from $L{=}50$ to $L{=}200$ increases effective depth from 5.4 to only 7.5. The network's capacity is fundamentally bounded by stage transitions, not by within-stage block count.
 
 \subsection{Why Does Standard ResNet Still Work Well?}
 
@@ -608,18 +617,27 @@ A natural question is: if the optimal $\alpha$ is much less than 0.5, why does t
 Indeed, He et al.~\cite{he2016identity} and De and Smith~\cite{de2020batch} have shown that batch normalization biases residual blocks toward small $F(x)$, effectively implementing a form of identity preference without learnable scaling. LRS confirms and quantifies this phenomenon.
 
 \subsection{Practical Implications}
+\label{sec:practical_implications}
 
-Our findings suggest several practical guidelines:
+Our findings translate into three actionable guidelines, each backed by experimental evidence.
 
-\begin{enumerate}
-    \item \textbf{Identity-favoring initialization is essential.} When using any form of residual scaling, starting near identity ($\alpha_0 \leq 0.12$) is safe across all depths. Residual-favoring initialization should be avoided.
-    \item \textbf{Depth efficiency.} The observation that only $\sim$8\% of blocks are actively used suggests significant potential for model compression at inference time, by pruning or simplifying near-identity blocks.
-    \item \textbf{Architecture search guidance.} The heterogeneous $\alpha$ distribution (high at boundaries, low within stages) can inform neural architecture search: allocate capacity at stage transitions rather than adding more within-stage blocks.
-\end{enumerate}
+\textbf{(1) $\alpha$-guided structural pruning.} The strongest practical use of LRS is as an \emph{automatic block-importance criterion for pruning}. Unlike magnitude-based pruning or sensitivity analysis, $\alpha$ values are produced as a free byproduct of training---no additional importance scoring is needed. Section~\ref{sec:pruning} validates this concretely: at $\alpha < 0.03$, two blocks (12 conv/BN layers) can be removed from a 200-layer network with \emph{zero} accuracy loss; at $\alpha < 0.05$, 15\% of blocks can be removed with $-1.01\%$ accuracy after a brief fine-tuning. This is a one-shot pruning workflow: train once with LRS, threshold $\alpha$, fine-tune for $\sim$10 epochs. The procedure requires no separate importance estimator, no iterative pruning, and no architecture-specific heuristics.
+
+\textbf{(2) Identity-favoring initialization is essential for deep training.} The catastrophic failure of LRS High at depth 200 (CIFAR-100: 37.50$\pm$29.20\%, Section~\ref{sec:init_sensitivity}) demonstrates that residual-favoring initialization is not merely suboptimal but actively destabilizes training. The mechanism is gradient-preservation: through $L$ blocks, the identity component of the gradient factor compounds as $(1{-}\alpha_0)^L$, vanishing for high $\alpha_0$. For any future work involving learnable residual scaling, initializing $\alpha_0 \leq 0.12$ (equivalently $\theta_0 \leq -2$) is safe across all depths we tested. This guideline aligns with ReZero ($\alpha_0 = 0$) and SkipInit, but is more permissive: $\alpha_0 \approx 0.12$ allows the network to refine from a non-degenerate starting point.
+
+\textbf{(3) Architecture search and design.} The heterogeneous $\alpha$ distribution (high at stage transitions, low within stages) provides a falsifiable design heuristic: \emph{capacity should be allocated at stage boundaries rather than within stages}. Neural architecture search procedures could use $\alpha$-statistics as a regularizer to penalize architectures that allocate too many within-stage blocks. More immediately, the $D_\text{eff}$ metric (Table~\ref{tab:deff}) provides a quick diagnostic: if $D_\text{eff} \ll L$ after training, the network is overparameterized in depth.
 
 \subsection{Limitations}
 
-This study has several limitations. First, ImageNet experiments are limited to ResNet-50; deeper ImageNet models (ResNet-101/152) would provide stronger validation of the depth--$\alpha$ relationship at scale. Second, LRS adds one parameter per block and slightly modifies the optimization landscape; the learned $\alpha$ values reflect this modified landscape rather than the standard ResNet's implicit preferences. Third, our analysis is restricted to bottleneck ResNets and may not directly apply to other architectures (e.g., Vision Transformers, where LayerScale serves a similar role). Fourth, the effective depth threshold ($\alpha > 0.3$) is somewhat arbitrary; different thresholds would yield different effective depth estimates, though the qualitative conclusion---that most blocks are near-identity---is robust.
+This study has several limitations, which we address directly.
+
+\textbf{Scale of ImageNet evaluation.} Our ImageNet experiments are limited to ResNet-50 (16 blocks). Deeper ImageNet models would more strongly validate the depth--$\alpha$ scaling law at scale. We partially mitigate this by showing the law holds across four CIFAR depths (50--200) and that ImageNet ResNet-50 $\alpha$ values are consistent with CIFAR at the same depth, but extending to ResNet-101/152 on ImageNet is the most natural next step.
+
+\textbf{Measurement-induced bias.} LRS adds one parameter per block and modifies the optimization landscape, raising the concern that the learned $\alpha$ values reflect this modification rather than the standard ResNet's implicit preferences. Two pieces of evidence argue against this. First, the identity-initialization experiments (Section~\ref{sec:identity_init}) show that mean $\alpha$ converges to nearly identical values (0.114 vs.\ 0.118) regardless of whether the residual branch is initialized randomly (He) or as identity, indicating the convergence target is intrinsic to the architecture rather than to the optimization path. Second, prior work~\cite{de2020batch} independently established that batch normalization biases standard ResNet residuals toward identity---a phenomenon LRS makes explicit but does not create. We interpret LRS as a measurement instrument that makes a preexisting preference observable, not a force that imposes one.
+
+\textbf{Architecture scope.} Our analysis is restricted to bottleneck ResNets. Basic blocks (ResNet-18/34), Vision Transformers, and other residual architectures are not covered. The closely related LayerScale~\cite{touvron2021going} serves a similar stabilization role in ViTs, but its per-channel parameterization does not yield the per-block scalar interpretation LRS provides. Extending LRS to these architectures is straightforward in principle but is left to future work.
+
+\textbf{Threshold dependency.} The ``active block'' threshold $\alpha > 0.3$ in Section~\ref{sec:effective_depth} is admittedly arbitrary. We address this by reporting (i) results across four thresholds (Table~\ref{tab:threshold_sensitivity}) showing the qualitative pattern is invariant, and (ii) a threshold-free metric $D_\text{eff} = \sum_i \alpha_i$ (Table~\ref{tab:deff}) that recovers the same conclusion without any cutoff.
 
 %% ============================================================
 \section{Conclusion}
@@ -732,6 +750,18 @@ All code, trained models, and experimental results are publicly available at \ur
 \bibinfo{year}{2017}.
 \bibinfo{title}{Densely connected convolutional networks}.
 \newblock In: \bibinfo{booktitle}{Proceedings of the IEEE Conference on Computer Vision and Pattern Recognition (CVPR)}, pp.~\bibinfo{pages}{4700--4708}.
+
+\bibitem[{Howard et~al.(2017)}]{howard2017mobilenets}
+\bibinfo{author}{A.G.~Howard}, \bibinfo{author}{M.~Zhu}, \bibinfo{author}{B.~Chen}, \bibinfo{author}{D.~Kalenichenko}, \bibinfo{author}{W.~Wang}, \bibinfo{author}{T.~Weyand}, \bibinfo{author}{M.~Andreetto}, \bibinfo{author}{H.~Adam},
+\bibinfo{year}{2017}.
+\bibinfo{title}{MobileNets: Efficient convolutional neural networks for mobile vision applications}.
+\newblock \href{http://arxiv.org/abs/1704.04861}{\tt arXiv:1704.04861}.
+
+\bibitem[{Tan and Le(2019)}]{tan2019efficientnet}
+\bibinfo{author}{M.~Tan}, \bibinfo{author}{Q.~Le},
+\bibinfo{year}{2019}.
+\bibinfo{title}{EfficientNet: Rethinking model scaling for convolutional neural networks}.
+\newblock In: \bibinfo{booktitle}{International Conference on Machine Learning (ICML)}, pp.~\bibinfo{pages}{6105--6114}.
 
 \end{thebibliography}
 
