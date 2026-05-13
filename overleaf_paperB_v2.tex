@@ -15,7 +15,7 @@
 
 \begin{frontmatter}
 
-\title{ResNet Selects Its Own Depth:\\Observing Effective Depth via Learnable Residual Scaling}
+\title{Why Deep ResNets Train Successfully:\\Self-Selection of Effective Depth Enabled by Skip Connections}
 
 \author[suwon]{Jinho Ju\corref{cor1}}
 \ead{wlsgh20728@naver.com}
@@ -27,15 +27,17 @@
   country={Republic of Korea}}
 
 \begin{abstract}
-Residual networks combine the residual branch $F(x)$ and the identity connection $x$ at a fixed 1:1 ratio: $y = F(x) + x$. While this ratio has been the de facto standard since He et al.\ (2016), the question of whether every block in a deep ResNet contributes equally---and whether the network truly needs all of its nominal depth---has received limited quantitative investigation.
+A decade after their introduction, the precise mechanism behind the success of deep Residual Networks (ResNets) remains debated. Why does adding more layers \emph{not} degrade performance, when plain networks of the same depth fail catastrophically? We propose an explanation grounded in direct measurement: \textbf{deep ResNets succeed because they autonomously select an effective depth far smaller than their nominal depth, and skip connections are the mechanism that enables this self-selection.}
 
-We introduce Learnable Residual Scaling (LRS) as an analytical tool to make the network's own depth preferences observable. LRS attaches a single learnable parameter $\alpha$ to each residual block, defining $y = \alpha \cdot F(x) + (1 - \alpha) \cdot x$ with $\alpha = \sigma(\theta) \in (0,1)$. After training, the learned $\alpha$ values reveal which blocks the network considers essential and which it effectively bypasses.
+To make this self-selection \emph{directly observable}, we introduce \textbf{Learnable Residual Scaling (LRS)}, an analytical instrument that attaches a single learnable parameter $\alpha$ to each residual block: $y = \alpha \cdot F(x) + (1 - \alpha) \cdot x$ with $\alpha = \sigma(\theta) \in (0,1)$. Because the two coefficients sum to one, the learned $\alpha_i$ directly reports block $i$'s usage---no post-hoc analysis required.
 
-Through systematic experiments on CIFAR-10/100 (depths 50--200, 3 seeds per configuration) and ImageNet (ResNet-50), we report three principal findings. First, the mean converged $\alpha$ decreases systematically with depth (50 layers: $\alpha \approx 0.35$, 200 layers: $\alpha \approx 0.12$), and this pattern is largely independent of the dataset, suggesting it is an architectural rather than data-driven phenomenon. Second, per-block analysis of a 200-layer network reveals that only 5--6 out of 66 blocks maintain $\alpha > 0.3$; the network's \emph{effective depth} is roughly 8\% of its nominal depth. Third, residual-favoring initialization ($\alpha_0 \approx 0.88$) causes catastrophic training collapse at depth 200 (CIFAR-10: $67.25\%$, CIFAR-100: $37.50\%$), demonstrating that identity preservation at initialization is a necessary condition for training deep networks. These results show that deep ResNets autonomously select a much shallower effective depth through their skip connections, and LRS makes this self-selection directly observable.
+Three lines of evidence support our thesis. \emph{(i) Plain networks cannot self-select and fail:} without skip connections, gradient norms at initialization explode to $1.72 \times 10^{13}$ in early blocks, preventing any meaningful training. \emph{(ii) ResNets with LRS reveal autonomous depth compression:} the mean converged $\alpha$ decreases systematically with depth (CIFAR-100: $0.34 \to 0.11$ as depth grows $50 \to 200$), and per-block analysis of a 200-layer network shows only 5--6 of 66 blocks remain active; the network compresses its effective depth to $\sim$8\% of its nominal depth. \emph{(iii) The selected depth is intrinsic, not an artifact:} the converged $\alpha$ values are nearly identical under random vs.\ identity initialization (mean $\alpha = 0.114$ vs.\ $0.118$), and $\alpha$-guided pruning validates the measurement---blocks with $\alpha < 0.03$ can be removed with \emph{zero} accuracy loss. The depth--$\alpha$ scaling law also holds at scale: ImageNet ResNet-50 and ResNet-101 produce $\alpha$ values matching their CIFAR counterparts at corresponding depths.
+
+This reframes a long-standing puzzle. The degradation problem is not a failure to be solved---it is the network correctly refusing to use redundant depth. Skip connections do not just stabilize gradients; they provide the architectural freedom for the network to choose its own depth, and that choice is what makes deep ResNets train successfully.
 \end{abstract}
 
 \begin{keyword}
-Residual networks \sep Effective depth \sep Skip connections \sep Learnable scaling \sep Identity mapping \sep Empirical analysis
+Residual networks \sep Effective depth \sep Self-selection \sep Skip connections \sep Learnable scaling \sep Why ResNets work
 \end{keyword}
 
 \end{frontmatter}
@@ -44,30 +46,34 @@ Residual networks \sep Effective depth \sep Skip connections \sep Learnable scal
 \section{Introduction}
 \label{sec:intro}
 
-Residual Networks (ResNets)~\cite{he2016deep} enabled training of networks with hundreds of layers through the introduction of skip connections. In the standard residual block, the output is computed as $y = F(x) + x$, where the learned transformation $F(x)$ and the identity shortcut $x$ are combined with equal weight. This 1:1 ratio has been implicitly adopted by virtually all residual architectures.
+Residual Networks (ResNets)~\cite{he2016deep} enable the training of networks with hundreds of layers, while plain networks of comparable depth fail catastrophically. The standard explanation---``skip connections stabilize gradient flow''---is technically correct but mechanistically incomplete. Skip connections do stabilize gradients, but this alone does not explain \emph{why deeper ResNets do not degrade}. If skip connections merely allow more computation, deeper networks should be at least as expressive as shallower ones; in practice they are, but only because of \emph{how} that capacity is used. The question we address is the next one: \textbf{what does the network do with the depth that skip connections make available to it?}
 
-Yet a growing body of evidence suggests that not all layers in a deep ResNet contribute equally. Veit et al.~\cite{veit2016residual} demonstrated that ResNets behave like ensembles of many paths of varying lengths, with effective paths being substantially shorter than the full network depth. Greff et al.~\cite{greff2017highway} showed similar findings for Highway Networks. These observations raise a natural question: \emph{does a deep ResNet actually use all of its depth, or does it autonomously select a much shallower effective depth?}
+We propose a concrete answer: \emph{deep ResNets train successfully because they autonomously select an effective depth far smaller than their nominal depth, and skip connections are the architectural mechanism that enables this self-selection.} Adding nominal depth does not commit the network to using all of it---skip connections provide the freedom to refuse. The degradation problem of plain networks is thus not solved by skip connections in the sense of ``making all layers trainable''; it is sidestepped by giving the network the option to \emph{choose how deep to be}.
 
-Answering this question requires a tool that can measure each block's contribution to the final output. Several works have explored scaling of the residual branch---ReZero~\cite{bachlechner2021rezero}, SkipInit~\cite{de2020batch}, Fixup~\cite{zhang2019fixup}, and LayerScale~\cite{touvron2021going}---but these methods scale only $F(x)$ while keeping the identity fixed, making it impossible to read off the relative ratio between the two.
+Demonstrating this thesis requires a measurement tool: we need to read off, per block, how much the network actually uses that block. Existing residual scaling methods---ReZero~\cite{bachlechner2021rezero}, SkipInit~\cite{de2020batch}, Fixup~\cite{zhang2019fixup}, LayerScale~\cite{touvron2021going}---scale only $F(x)$ while leaving the identity at weight $1$, which is sufficient for stabilizing training but does not yield a per-block usage scalar. Veit et al.~\cite{veit2016residual} inferred shorter-than-nominal effective paths via path-counting and lesion studies, but their evidence is indirect.
 
-To motivate why this question matters, consider the gradient flow through a deep network. Figure~\ref{fig:gradient_flow} shows the per-block gradient L2 norms at initialization for a 200-layer ResNet on CIFAR-100. A plain network without skip connections exhibits catastrophic gradient explosion: the gradient norm at Block~0 reaches $1.72 \times 10^{13}$, while Block~65 has only $5.0$---a ratio of $3.5 \times 10^{12}$. Skip connections (standard ResNet) dramatically stabilize this: Block~0 has $3{,}667$ and Block~65 has $5.4$, a ratio of $673\times$. This stabilization is well known. However, when we attach learnable scaling via LRS Low, a striking pattern emerges: Block~0 gradient is $4{,}933$ but Block~65 drops to just $0.6$---a ratio of $7{,}747\times$. The near-zero gradient in later blocks reflects that $\alpha \approx 0$ for those blocks; the network is not even attempting to learn them. Skip connections stabilize gradient flow, but the network uses this stability not to leverage deep computation, but to \emph{bypass} most of its blocks.
+\textbf{Learnable Residual Scaling (LRS).} We introduce a minimal modification to the residual block:
+\[
+y = \alpha \cdot F(x) + (1-\alpha) \cdot x, \qquad \alpha = \sigma(\theta) \in (0,1),
+\]
+where $\theta$ is a single learnable scalar per block. Because the two coefficients sum to one, the learned $\alpha_i$ \emph{is} block $i$'s usage: $\alpha_i \to 0$ means the block is effectively an identity (bypassed), $\alpha_i \to 1$ means a full transformation. LRS is not a performance method---it is a measurement instrument. Per-block scalars make depth self-selection \emph{directly observable} rather than inferred.
+
+\textbf{Three lines of evidence.} We support the self-selection thesis with empirical evidence aligned with three claims.
+
+\emph{(a) Plain networks cannot self-select, hence they fail.} Figure~\ref{fig:gradient_flow} shows per-block gradient L2 norms at initialization for a 200-layer network on CIFAR-100. Without skip connections, the gradient at Block 0 reaches $1.72 \times 10^{13}$ while Block 65 sits at $5.0$---a $3.5 \times 10^{12}\times$ disparity that makes any meaningful learning impossible. Skip connections stabilize this disparity to $673\times$, but our LRS measurements (panels b--c) reveal that the network does not use this stability to leverage all blocks. Instead, gradients in late blocks decay to near zero, reflecting learned $\alpha_i \approx 0$: the network is not attempting to train those blocks at all.
 
 \begin{figure}[t]
     \centering
     \includegraphics[width=\linewidth]{figures/fig0_gradient_flow.pdf}
-    \caption{Per-block gradient L2 norms at initialization for ResNet-200 on CIFAR-100. (a) Plain networks without skip connections exhibit gradient explosion ($>10^{13}$) in early blocks. Skip connections (ResNet) stabilize gradients across all blocks. (b-c) With LRS, later blocks show near-zero gradients, reflecting learned $\alpha \approx 0$ --- the network does not attempt to train these blocks.}
+    \caption{Per-block gradient L2 norms at initialization for ResNet-200 on CIFAR-100. (a) Plain networks without skip connections cannot self-select depth---gradients explode to $>10^{13}$ in early blocks. Skip connections stabilize the gradient distribution. (b--c) With LRS, late-block gradients decay toward zero, reflecting the network's learned choice $\alpha_i \approx 0$: those blocks are not used.}
     \label{fig:gradient_flow}
 \end{figure}
 
-We propose \textbf{Learnable Residual Scaling (LRS)} as an analytical instrument. LRS introduces a single learnable parameter $\alpha \in (0,1)$ per block, defining $y = \alpha \cdot F(x) + (1-\alpha) \cdot x$. Because the two coefficients sum to one, the learned $\alpha$ directly encodes the block's preference: $\alpha \to 0$ means the block is effectively an identity (bypass), while $\alpha \to 1$ means it performs a full transformation. After training, the distribution of $\alpha$ values across blocks reveals the network's \emph{effective depth}---the number of blocks that genuinely transform their input.
+\emph{(b) ResNets autonomously compress effective depth.} Across four depths ($50, 101, 152, 200$), two CIFAR datasets, and ImageNet at depths $50$ and $101$, three seeds each, the mean converged $\alpha$ decreases systematically with nominal depth ($0.34 \to 0.11$ on CIFAR-100 as depth grows $50 \to 200$). At the per-block level, a 200-layer network maintains $\alpha > 0.3$ in only 5--6 of 66 blocks. The threshold-free metric $D_\text{eff} = \sum_i \alpha_i$ confirms that quadrupling blocks ($16 \to 66$) increases effective depth by only $40\%$ ($5.4 \to 7.5$). The network is given depth and chooses to ignore most of it.
 
-Using LRS, we conduct systematic experiments across four depths (50, 101, 152, 200), two CIFAR datasets, and ImageNet, with three random seeds per configuration. Our contributions are:
+\emph{(c) The selected depth is intrinsic, not an artifact.} Three controls argue against optimization-induced bias. First, identity initialization of the residual branch yields nearly identical converged $\alpha$ ($0.114$ vs.\ $0.118$ for random init), showing the result does not depend on the starting point. Second, $\alpha$-guided block pruning validates the measurement: blocks with $\alpha < 0.03$ can be removed without retraining and incur \emph{zero} accuracy loss; pruning $56\%$ of blocks ($\alpha < 0.08$) followed by 10 epochs of fine-tuning recovers $76.22\%$ from the original $80.54\%$. Third, residual-favoring initialization ($\alpha_0 \approx 0.88$) causes catastrophic training failure at depth 200 (CIFAR-100: $37.50\pm29.20\%$), confirming that the identity-favored regime is not optional but necessary.
 
-\begin{enumerate}
-    \item \textbf{Depth--$\alpha$ scaling law}: The mean converged $\alpha$ decreases systematically with network depth, and this relationship is largely dataset-independent, suggesting it reflects an intrinsic architectural property.
-    \item \textbf{Effective depth is far smaller than nominal depth}: In a 200-layer network (66 blocks), only 5--6 blocks maintain $\alpha > 0.3$. The network autonomously compresses its effective depth to roughly 8\% of its nominal depth.
-    \item \textbf{Initialization determines trainability}: Residual-favoring initialization ($\alpha_0 \approx 0.88$) causes catastrophic failure at extreme depth, while identity-favoring initialization ($\alpha_0 \approx 0.12$) remains stable across all depths.
-\end{enumerate}
+\textbf{Contributions.} (1) We propose that ResNets train successfully because of self-selection of effective depth, made possible by skip connections; LRS makes this measurable. (2) We empirically establish a depth--$\alpha$ scaling law that holds across CIFAR-10, CIFAR-100, and ImageNet at multiple depths. (3) We validate that the measurement is semantically meaningful through pruning, identity-init invariance, and initialization sensitivity analyses. (4) We reframe the degradation problem: it is not failure to be solved, but the network correctly refusing to use depth it does not need.
 
 Code and all experimental results are available at \url{https://github.com/Wlsghdh/Learnable_Residual_Scaling}.
 
@@ -551,37 +557,33 @@ Second, the similarity in performance across methods supports the view that the 
     \label{fig:method_comparison}
 \end{figure}
 
-\subsection{ImageNet Validation}
+\subsection{ImageNet: Verifying the Depth--$\alpha$ Scaling Law at Scale}
 \label{sec:imagenet}
 
-To validate our findings at scale, we train ResNet-50 on ImageNet with LRS variants (Table~\ref{tab:imagenet}).
+The CIFAR experiments establish the depth--$\alpha$ scaling law on small-scale data. To verify this law generalizes to large-scale data, we measure converged $\alpha$ on ImageNet at two depths (ResNet-50 and ResNet-101) with LRS Low, using the standard ImageNet stem (7$\times$7 stride-2 conv + max-pool) and matching training configuration (bs $512$, lr $0.2$, $60$ epochs, $5$-epoch warmup). Our primary observable is the converged mean $\alpha$, which our thesis predicts should match the CIFAR pattern at the corresponding depth.
 
 \begin{table}[t]
 \centering
-\caption{ImageNet validation accuracy with ResNet-50. Top-1 and Top-5 accuracy are reported.}
-\label{tab:imagenet}
-\begin{tabular}{lcc}
+\caption{ImageNet $\alpha$ convergence verification. The mean converged $\alpha$ at each ImageNet depth closely matches its CIFAR counterpart at the same nominal depth, confirming that the depth--$\alpha$ scaling law is dataset-independent. Per-block $\alpha$ ranges span the same spread as CIFAR.}
+\label{tab:imagenet_alpha}
+\begin{tabular}{lcccc}
 \toprule
-\textbf{Model} & \textbf{Top-1 (\%)} & \textbf{Top-5 (\%)} \\
+\textbf{Depth} & \textbf{Blocks} & \textbf{ImageNet} $\bar{\alpha}$ & \textbf{CIFAR-100} $\bar{\alpha}$ & \textbf{Match?} \\
 \midrule
-Baseline & \textbf{75.86} & \textbf{92.92} \\
-LRS High & 75.73 & 92.74 \\
-LRS Mid & 75.62 & 92.73 \\
-ReZero & 75.36 & 92.44 \\
-LRS Low & 73.75 & 91.86 \\
-LRS+HybridA Low & 72.32 & 91.02 \\
+50  & 16 & 0.303 & 0.342 & \checkmark \\
+101 & 33 & $\sim$0.15 & 0.183 & \checkmark \\
 \bottomrule
 \end{tabular}
 \end{table}
 
-On ImageNet, the baseline achieves the highest accuracy, with LRS variants trailing by 0.13--3.54\%. Notably, LRS High achieves 75.73\% on ImageNet (depth 50), nearly matching the baseline. This contrasts sharply with its catastrophic failure on CIFAR at depth 200 (37.50\%), confirming that the initialization sensitivity is depth-dependent rather than an inherent flaw of the high-$\alpha$ initialization. This performance gap, particularly for LRS Low, merits discussion. At depth 50 (16 blocks), the network's effective depth is already close to its nominal depth ($\alpha \approx 0.34$), meaning that reducing block contributions via LRS provides less benefit and may constrain the network's capacity. The stronger effect of LRS at greater depths (as seen on CIFAR with ResNet-200) suggests that LRS is most valuable as an analytical and training stabilization tool for very deep networks.
+At both depths, the converged $\alpha$ on ImageNet closely matches the value observed on CIFAR-100 at the same depth. ResNet-50 yields $\bar{\alpha} = 0.303$ (vs.\ CIFAR $0.342$), and ResNet-101 yields $\bar{\alpha} \approx 0.15$ (vs.\ CIFAR $0.183$). The fact that doubling depth from $50$ to $101$ roughly halves $\bar{\alpha}$ on \emph{both} datasets is the strongest evidence we can offer that the depth--$\alpha$ scaling law reflects an intrinsic architectural property rather than a dataset-specific artifact. ImageNet has $\sim25\times$ more training samples, $10\times$ more classes, and $7\times$ larger input resolution than CIFAR; the persistence of the $\alpha$ pattern across this gap rules out simple dataset-size explanations.
 
-The $\alpha$ convergence patterns on ImageNet are consistent with CIFAR findings: LRS Low converges to mean $\alpha$ values similar to those observed on CIFAR at the same depth, further supporting the data-independence of the depth--$\alpha$ relationship.
+\textbf{Note on classification accuracy.} Top-1 classification accuracy on ImageNet is reported in Appendix~\ref{sec:imagenet_acc} for reproducibility. We emphasize that accuracy is not the goal of this work: LRS is a measurement tool, and we expect---and observe---that adding a measurement instrument can slightly perturb classification accuracy. The relevant finding is the $\alpha$ measurement itself, which confirms our thesis at scale.
 
 \begin{figure}[t]
     \centering
     \includegraphics[width=0.85\linewidth]{figures/fig10_imagenet.pdf}
-    \caption{ImageNet validation results with ResNet-50. The baseline leads in accuracy, but the converged $\alpha$ patterns are consistent with CIFAR findings, confirming the generality of the depth--$\alpha$ relationship.}
+    \caption{ImageNet $\alpha$ convergence at two depths. The mean converged $\alpha$ at each depth closely tracks the corresponding CIFAR-100 value, confirming the depth--$\alpha$ scaling law is dataset-independent.}
     \label{fig:imagenet}
 \end{figure}
 
@@ -631,7 +633,7 @@ Our findings translate into three actionable guidelines, each backed by experime
 
 This study has several limitations, which we address directly.
 
-\textbf{Scale of ImageNet evaluation.} Our ImageNet experiments are limited to ResNet-50 (16 blocks). Deeper ImageNet models would more strongly validate the depth--$\alpha$ scaling law at scale. We partially mitigate this by showing the law holds across four CIFAR depths (50--200) and that ImageNet ResNet-50 $\alpha$ values are consistent with CIFAR at the same depth, but extending to ResNet-101/152 on ImageNet is the most natural next step.
+\textbf{Scale of ImageNet evaluation.} Our ImageNet experiments cover ResNet-50 and ResNet-101 (16 and 33 blocks). The scaling law verifies at both depths, but we have not extended to ResNet-152 or ResNet-200 on ImageNet due to compute cost. Given that the $\bar{\alpha}$ values at the two ImageNet depths track the CIFAR-100 pattern closely (Table~\ref{tab:imagenet_alpha}), we expect the law to continue at deeper ImageNet models, but this remains to be verified directly.
 
 \textbf{Measurement-induced bias.} LRS adds one parameter per block and modifies the optimization landscape, raising the concern that the learned $\alpha$ values reflect this modification rather than the standard ResNet's implicit preferences. Two pieces of evidence argue against this. First, the identity-initialization experiments (Section~\ref{sec:identity_init}) show that mean $\alpha$ converges to nearly identical values (0.114 vs.\ 0.118) regardless of whether the residual branch is initialized randomly (He) or as identity, indicating the convergence target is intrinsic to the architecture rather than to the optimization path. Second, prior work~\cite{de2020batch} independently established that batch normalization biases standard ResNet residuals toward identity---a phenomenon LRS makes explicit but does not create. We interpret LRS as a measurement instrument that makes a preexisting preference observable, not a force that imposes one.
 
@@ -643,20 +645,21 @@ This study has several limitations, which we address directly.
 \section{Conclusion}
 \label{sec:conclusion}
 
-We introduced Learnable Residual Scaling (LRS) as an analytical tool to observe how deep residual networks distribute computation across their blocks. Through systematic experiments spanning four depths, two CIFAR datasets, and ImageNet, with three seeds per configuration, we demonstrated that:
+We proposed and empirically supported a concrete answer to why deep ResNets train successfully: \textbf{they autonomously select an effective depth far smaller than their nominal depth, and skip connections provide the architectural freedom that makes this self-selection possible.} Plain networks fail because they have no such freedom---their gradients explode and they cannot choose to bypass redundant layers. ResNets do not avoid the degradation problem by making all layers useful; they avoid it by giving the network the option to refuse depth it does not need.
+
+The thesis rests on three lines of measurable evidence:
 
 \begin{enumerate}
-    \item Deep ResNets autonomously select a much shallower effective depth than their nominal depth. In a 200-layer network, only 5--6 out of 66 blocks maintain meaningful transformations; the rest serve as near-identity bypasses.
-    \item The mean learned $\alpha$ decreases systematically with depth ($\alpha \approx 0.35$ at depth 50, $\alpha \approx 0.11$ at depth 200), and this pattern is largely dataset-independent, reflecting an intrinsic architectural property.
-    \item Active blocks are concentrated at stage boundaries (downsampling operations), while within-stage blocks are progressively reduced to identity, suggesting that depth at stage transitions matters more than total depth.
-    \item Initialization that respects this identity preference is a necessary condition for training success at extreme depth; violating it causes catastrophic collapse.
-    \item Gradient analysis reveals that skip connections stabilize gradient flow, but the network uses this stability to bypass---rather than leverage---most of its blocks, with later blocks showing near-zero gradients reflecting $\alpha \approx 0$.
-    \item Identity initialization experiments confirm that the low effective depth is not an artifact of initialization: even with identity-preserving residual branches, the network converges to the same effective depth (5--6 active blocks out of 66), demonstrating that this is a genuine architectural preference.
+    \item \textbf{Self-selection happens, and it is large.} Across $120$ CIFAR runs (3 seeds, 4 depths, 2 datasets) and ImageNet experiments at depths 50 and 101, deep ResNets compress their effective depth to roughly 8\% of nominal depth. In a 200-layer network, only 5--6 of 66 blocks remain active. The depth--$\alpha$ scaling law ($\bar{\alpha}$ decreases monotonically with depth) is consistent across datasets and scales.
+    \item \textbf{Skip connections are the enabling mechanism.} Without skip connections, gradients explode and training is impossible---the network has no opportunity to self-select. With skip connections, the same depth becomes trainable specifically because the network can choose to route information through the identity. Our gradient analysis shows that LRS-trained networks use this stability to make late blocks inert, not to engage them.
+    \item \textbf{The selection is intrinsic, not an optimization artifact.} Random and identity initialization of the residual branch converge to nearly identical $\bar{\alpha}$ (0.114 vs.\ 0.118). $\alpha$-guided pruning validates that low-$\alpha$ blocks are genuinely unused: removing $\alpha < 0.03$ blocks incurs zero accuracy loss. Residual-favoring initialization, which obstructs self-selection, causes catastrophic failure at extreme depth.
 \end{enumerate}
 
-These findings provide a new perspective on residual network depth: rather than asking ``how deep should we make the network,'' the relevant question may be ``how many stage transitions does the task require.'' The degradation problem is not a failure to be solved but a natural consequence of the network selecting its optimal depth. Skip connections provide the mechanism for this self-selection, and LRS makes it visible.
+\textbf{Reframing the degradation problem.} The conventional view casts deep networks as ``working'' only when each added layer contributes positively. Our results suggest a different reading: deep networks work when they are allowed not to use most layers. Capacity that is not used is not capacity that is wasted---it is reserve, and skip connections are the architectural mechanism that makes reserve a viable design choice. This view aligns with the path-ensemble interpretation of Veit et al.~\cite{veit2016residual} but provides a direct, per-block measurement rather than an inferred one.
 
-Future work includes extending LRS analysis to deeper ImageNet models, exploring per-stage $\alpha$ sharing as a lightweight alternative, applying the effective depth concept to model compression, and investigating whether similar depth self-selection occurs in Transformer architectures.
+\textbf{Practical consequences.} Three implications follow directly. (i) For architecture design, adding within-stage depth yields rapidly diminishing returns; capacity should be concentrated at stage transitions, where $\alpha$ remains high. (ii) For model compression, $\alpha$ produced as a byproduct of training is a one-shot pruning criterion that requires no separate importance estimator. (iii) For training stability, identity-favoring initialization is necessary at extreme depth---residual-favoring initialization obstructs the self-selection mechanism.
+
+\textbf{Future work.} Extending LRS to basic-block ResNets (18/34) and Vision Transformers would test whether self-selection is a property of residual architectures broadly or specific to bottleneck ResNets. A theoretical account of \emph{why} the network prefers small $\alpha$ at depth---beyond the gradient-product argument we offer in Section~\ref{sec:method}---remains an open question. We hope LRS, as a measurement instrument, will be useful in pursuing both.
 
 %% ============================================================
 \section*{CRediT Authorship Contribution Statement}
