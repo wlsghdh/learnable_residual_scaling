@@ -24,3 +24,6 @@ nohup.out
 # Model checkpoints (too large for git, regenerate from training)
 checkpoints/
 results-json/imagenet_v2/checkpoints/
+
+# BMVC template clone (third-party, not tracked)
+bmvc_template/
