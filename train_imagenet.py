@@ -65,6 +65,8 @@ def parse_args():
                         help='AMP 비활성화')
     parser.add_argument('--save-checkpoint', action='store_true', default=False,
                         help='최고 모델 체크포인트 저장')
+    parser.add_argument('--resume', type=str, default=None,
+                        help='체크포인트 경로로부터 resume')
     return parser.parse_args()
 
 
@@ -290,12 +292,29 @@ def main():
     best_top5 = 0.0
     best_epoch = 0
     start_time = time.time()
+    start_epoch = 1
 
     ckpt_dir = os.path.join(args.output, 'checkpoints')
     if args.save_checkpoint:
         os.makedirs(ckpt_dir, exist_ok=True)
 
-    for epoch in range(1, args.epochs + 1):
+    # Resume from checkpoint if specified
+    if args.resume and os.path.exists(args.resume):
+        print(f'  Resuming from {args.resume}')
+        ckpt = torch.load(args.resume, map_location=device, weights_only=False)
+        model.load_state_dict(ckpt['model_state_dict'])
+        optimizer.load_state_dict(ckpt['optimizer_state_dict'])
+        start_epoch = ckpt['epoch'] + 1
+        best_top1 = ckpt.get('best_top1', 0.0)
+        best_epoch = ckpt['epoch']
+        # Advance scheduler to current epoch
+        for _ in range(ckpt['epoch']):
+            scheduler.step()
+        current_lr = optimizer.param_groups[0]['lr']
+        print(f'  Resumed at epoch {start_epoch}, best_top1={best_top1:.2f}%, LR={current_lr:.5f}')
+        print()
+
+    for epoch in range(start_epoch, args.epochs + 1):
         t_loss, t_top1, t_top5 = train_one_epoch(
             model, train_loader, optimizer, criterion,
             scaler, device, use_amp)

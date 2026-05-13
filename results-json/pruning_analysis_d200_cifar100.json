@@ -1,0 +1,166 @@
+{
+  "depth": 200,
+  "dataset": "cifar100",
+  "seed": 42,
+  "checkpoint": "checkpoints/lrs_low_depth200_cifar100_seed42_best.pth",
+  "original": {
+    "accuracy": 80.54,
+    "flops": 9767600128,
+    "latency": {
+      "mean_ms": 10.129132644287893,
+      "std_ms": 0.7960694711503438,
+      "median_ms": 9.966231504222378,
+      "p95_ms": 11.167938543076161
+    },
+    "params": {
+      "total": 62822118,
+      "active": 62822118,
+      "pruned": 0
+    },
+    "blocks": 66
+  },
+  "finetune_config": {
+    "epochs": 10,
+    "lr": 0.001
+  },
+  "results": [
+    {
+      "threshold": 0.0,
+      "pruned": 0,
+      "total": 66,
+      "kept": 66,
+      "layers_removed": 0,
+      "pct_removed": 0,
+      "acc_no_ft": 80.54,
+      "acc_with_ft": 80.54,
+      "flops": 9767600128,
+      "flops_ratio": 1.0,
+      "latency": {
+        "mean_ms": 10.129132644287893,
+        "std_ms": 0.7960694711503438,
+        "median_ms": 9.966231504222378,
+        "p95_ms": 11.167938543076161
+      },
+      "params": {
+        "total": 62822118,
+        "active": 62822118,
+        "pruned": 0
+      }
+    },
+    {
+      "threshold": 0.03,
+      "pruned": 2,
+      "total": 66,
+      "kept": 64,
+      "layers_removed": 12,
+      "pct_removed": 3.0303030303030303,
+      "acc_no_ft": 80.54,
+      "acc_with_ft": 80.55,
+      "flops": 9481994240,
+      "flops_ratio": 0.9707598709757501,
+      "latency": {
+        "mean_ms": 9.892059649719158,
+        "std_ms": 0.22724438384497025,
+        "median_ms": 9.853205490799155,
+        "p95_ms": 9.922306956286775
+      },
+      "params": {
+        "total": 62822118,
+        "active": 53896932,
+        "pruned": 8925186
+      }
+    },
+    {
+      "threshold": 0.05,
+      "pruned": 10,
+      "total": 66,
+      "kept": 56,
+      "layers_removed": 60,
+      "pct_removed": 15.151515151515152,
+      "acc_no_ft": 73.88,
+      "acc_with_ft": 79.65,
+      "flops": 8337997824,
+      "flops_ratio": 0.8536383261737064,
+      "latency": {
+        "mean_ms": 8.722323555048206,
+        "std_ms": 0.3111178619446582,
+        "median_ms": 8.642554501420818,
+        "p95_ms": 9.269627100002253
+      },
+      "params": {
+        "total": 62822118,
+        "active": 44959452,
+        "pruned": 17862666
+      }
+    },
+    {
+      "threshold": 0.08,
+      "pruned": 37,
+      "total": 66,
+      "kept": 29,
+      "layers_removed": 222,
+      "pct_removed": 56.060606060606055,
+      "acc_no_ft": 3.9699999999999998,
+      "acc_with_ft": 75.91,
+      "flops": 4473077760,
+      "flops_ratio": 0.45795054070419866,
+      "latency": {
+        "mean_ms": 4.914503165637143,
+        "std_ms": 0.5228397088394994,
+        "median_ms": 4.777506001119036,
+        "p95_ms": 5.865133607585448
+      },
+      "params": {
+        "total": 62822118,
+        "active": 23166657,
+        "pruned": 39655461
+      }
+    },
+    {
+      "threshold": 0.1,
+      "pruned": 48,
+      "total": 66,
+      "kept": 18,
+      "layers_removed": 288,
+      "pct_removed": 72.72727272727273,
+      "acc_no_ft": 3.1300000000000003,
+      "acc_with_ft": 74.74,
+      "flops": 2897330176,
+      "flops_ratio": 0.29662661636756144,
+      "latency": {
+        "mean_ms": 3.2748214101593476,
+        "std_ms": 0.19353790989201977,
+        "median_ms": 3.241683996748179,
+        "p95_ms": 3.348911210196091
+      },
+      "params": {
+        "total": 62822118,
+        "active": 16737462,
+        "pruned": 46084656
+      }
+    },
+    {
+      "threshold": 0.15,
+      "pruned": 58,
+      "total": 66,
+      "kept": 8,
+      "layers_removed": 348,
+      "pct_removed": 87.87878787878788,
+      "acc_no_ft": 3.63,
+      "acc_with_ft": 72.63,
+      "flops": 1465368576,
+      "flops_ratio": 0.15002339948370172,
+      "latency": {
+        "mean_ms": 1.8216427102743182,
+        "std_ms": 0.009462459174239404,
+        "median_ms": 1.8209644986200146,
+        "p95_ms": 1.8374836909060832
+      },
+      "params": {
+        "total": 62822118,
+        "active": 9751212,
+        "pruned": 53070906
+      }
+    }
+  ]
+}

@@ -100,6 +100,7 @@ class Bottleneck(nn.Module):
 class LRSBottleneck(nn.Module):
     """Learnable Residual Scaling Bottleneck
     y = α·F(x) + (1−α)·x,  α = sigmoid(θ),  per-block learnable
+    Pruning: set module._pruned = True to skip F(x) computation entirely
     """
     expansion = 4
 
@@ -117,6 +118,11 @@ class LRSBottleneck(nn.Module):
         self.residual_scale = nn.Parameter(torch.tensor(float(init_scale)))
 
     def forward(self, x):
+        # Short-circuit for pruned blocks: skip F(x) computation entirely
+        if getattr(self, '_pruned', False):
+            identity = self.downsample(x) if self.downsample is not None else x
+            return self.relu(identity)
+
         identity = x
         out = self.relu(self.bn1(self.conv1(x)))
         out = self.relu(self.bn2(self.conv2(out)))
@@ -389,17 +395,29 @@ class PlainBottleneck(nn.Module):
 # ============================================================
 
 class ResNet(nn.Module):
-    """ResNet Base Class (CIFAR용 3×3 첫 conv, stride=1, no maxpool)"""
+    """ResNet Base Class
+    - CIFAR (num_classes<=200): 3×3 stride=1 stem, no maxpool
+    - ImageNet (num_classes==1000): 7×7 stride=2 + maxpool stem (He et al. 2016)
+    """
 
     def __init__(self, block, layers, num_classes=10, init_kwargs=None):
         super().__init__()
         self.in_channels = 64
         self.block = block
         self.init_kwargs = init_kwargs or {}
+        self.imagenet_stem = (num_classes == 1000)
 
-        self.conv1 = nn.Conv2d(3, 64, 3, 1, 1, bias=False)
-        self.bn1 = nn.BatchNorm2d(64)
-        self.relu = nn.ReLU(inplace=True)
+        if self.imagenet_stem:
+            # Standard ImageNet stem: 7x7 stride=2 + maxpool stride=2 → 56x56
+            self.conv1 = nn.Conv2d(3, 64, 7, 2, 3, bias=False)
+            self.bn1 = nn.BatchNorm2d(64)
+            self.relu = nn.ReLU(inplace=True)
+            self.maxpool = nn.MaxPool2d(kernel_size=3, stride=2, padding=1)
+        else:
+            # CIFAR stem: 3x3 stride=1, no maxpool
+            self.conv1 = nn.Conv2d(3, 64, 3, 1, 1, bias=False)
+            self.bn1 = nn.BatchNorm2d(64)
+            self.relu = nn.ReLU(inplace=True)
 
         self.layer1 = self._make_layer(64,  layers[0], stride=1)
         self.layer2 = self._make_layer(128, layers[1], stride=2)
@@ -436,6 +454,8 @@ class ResNet(nn.Module):
 
     def forward(self, x):
         x = self.relu(self.bn1(self.conv1(x)))
+        if self.imagenet_stem:
+            x = self.maxpool(x)
         x = self.layer1(x)
         x = self.layer2(x)
         x = self.layer3(x)

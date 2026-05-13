@@ -20,3 +20,7 @@ nohup.out
 .vscode/
 .idea/
 *.swp
+
+# Model checkpoints (too large for git, regenerate from training)
+checkpoints/
+results-json/imagenet_v2/checkpoints/
