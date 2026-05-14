@@ -31,11 +31,23 @@ Self-Selection of Effective Depth Enabled by Skip Connections}
 % — this is BMVC default; do not redefine here
 
 % Float spacing — prevent tables/figures from overlapping body text
-\setlength{\textfloatsep}{12pt plus 2pt minus 2pt}     % between top/bottom floats and text
-\setlength{\intextsep}{12pt plus 2pt minus 2pt}        % between in-text floats and text
-\setlength{\floatsep}{10pt plus 2pt minus 2pt}         % between two floats
-\setlength{\abovecaptionskip}{6pt}                     % space above caption
-\setlength{\belowcaptionskip}{4pt}                     % space below caption
+\setlength{\textfloatsep}{12pt plus 2pt minus 2pt}
+\setlength{\intextsep}{10pt plus 2pt minus 2pt}
+\setlength{\floatsep}{8pt plus 2pt minus 2pt}
+\setlength{\abovecaptionskip}{5pt}
+\setlength{\belowcaptionskip}{3pt}
+
+% Float placement: discourage LaTeX from deferring floats to end of doc
+\renewcommand{\topfraction}{0.92}
+\renewcommand{\bottomfraction}{0.85}
+\renewcommand{\textfraction}{0.08}
+\renewcommand{\floatpagefraction}{0.7}
+\setcounter{topnumber}{3}
+\setcounter{bottomnumber}{2}
+\setcounter{totalnumber}{4}
+
+% Force floats to appear before next section
+\usepackage[section]{placeins}
 
 %-------------------------------------------------------------------------
 \begin{document}
@@ -74,9 +86,9 @@ where $\theta$ is a single learnable scalar per block. Because the two coefficie
 
 \emph{(c) The selection is intrinsic, not an artifact.} Three controls argue against optimization-induced bias. First, identity initialization of the residual branch yields nearly identical converged $\bar{\alpha}$ ($0.114$ vs.\ $0.118$ for random init), showing the result does not depend on the starting point. Second, $\alpha$-guided block pruning validates the measurement: blocks with $\alpha < 0.03$ can be removed without retraining and incur \emph{zero} accuracy loss; pruning $56\%$ of blocks ($\alpha < 0.08$) followed by 10 epochs of fine-tuning recovers $75.91\%$ from the original $80.54\%$ while reducing FLOPs by $54\%$ and inference latency by $52\%$. Third, residual-favoring initialization ($\alpha_0 \approx 0.88$) causes catastrophic training failure at depth 200 (CIFAR-100: $37.50\pm29.20\%$), confirming that the identity-favored regime is not optional but necessary.
 
-\begin{figure}[t]
+\begin{figure}[!ht]
     \centering
-    \includegraphics[width=\linewidth]{figures/fig0_gradient_flow.pdf}
+    \includegraphics[width=0.95\linewidth]{figures/fig0_gradient_flow.pdf}
     \caption{Per-block gradient L2 norms at initialization for ResNet-200 on CIFAR-100. (a) Plain networks without skip connections cannot self-select depth---gradients explode to $>10^{13}$ in early blocks. Skip connections stabilize the gradient distribution. (b--c) With LRS, late-block gradients decay toward zero, reflecting the network's learned choice $\alpha_i \approx 0$: those blocks are not used.}
     \label{fig:gradient_flow}
 \end{figure}
@@ -99,7 +111,7 @@ ResNet~\cite{he2016deep} introduced skip connections to alleviate gradient vanis
 
 Several methods scale the residual branch (Table~\ref{tab:comparison}). \textbf{ReZero}~\cite{bachlechner2021rezero} initializes a scalar multiplier $\alpha = 0$ on the residual branch: $y = x + \alpha F(x)$. \textbf{SkipInit}~\cite{de2020batch} applies the same form with batch normalization retained. \textbf{Fixup}~\cite{zhang2019fixup} initializes the last BN of each block to zero so $F(x) \approx 0$ at start. \textbf{LayerScale}~\cite{touvron2021going} introduces per-channel learnable scaling in Vision Transformers. All these methods scale only $F(x)$ while keeping $x$ at weight $1$. LRS instead learns the relative weight of both branches via a single scalar, which is the key to per-block usage measurement.
 
-\begin{table}[t]
+\begin{table}[!ht]
 \centering
 \small
 \caption{Residual scaling methods. Only LRS measures the relative ratio between $F(x)$ and $x$ as a single per-block scalar, enabling direct effective-depth measurement.}
@@ -155,7 +167,7 @@ This product structure explains the depth--$\alpha$ relationship. For the produc
 
 We test three initialization strategies (Table~\ref{tab:init_variants}) to study convergence and sensitivity. These serve as probes: if the optimization landscape has a single basin, all three converge to the same $\bar{\alpha}$; otherwise, divergence reveals the role of initial conditions.
 
-\begin{table}[t]
+\begin{table}[!ht]
 \centering
 \small
 \caption{LRS variants by $\alpha$ initialization. The three starting points probe whether $\alpha$ converges to the same optimum.}
@@ -191,7 +203,7 @@ LRS High & $+2.0$ & $\approx 0.88$ & residual-favoring \\
 
 We first measure the central observation: how does the network's preferred $\bar{\alpha}$ change with depth? Table~\ref{tab:depth_alpha} reports converged $\bar{\alpha}$ on CIFAR-100 across the three initialization variants (3-seed mean).
 
-\begin{table}[t]
+\begin{table}[!ht]
 \centering
 \small
 \caption{Mean converged $\bar{\alpha}$ by depth on CIFAR-100 (3-seed average). Low and Mid converge to similar final values; High diverges at extreme depth.}
@@ -214,9 +226,9 @@ Several observations emerge. (i) \textbf{Monotonic decrease with depth.} The con
 
 Although ImageNet uses a single seed due to compute, the CIFAR scaling law has tight cross-seed variance: $\bar{\alpha}$ std at depths $(50, 101, 152, 200)$ is $(0.0007, 0.0005, 0.0012, 0.0002)$---all below $1\%$ of the mean. The ImageNet--CIFAR-100 gaps at matched depths are $0.342{-}0.303 = 0.039$ at $d50$ and $0.183{-}0.166 = 0.017$ at $d101$, both 20--80$\times$ larger than the CIFAR seed-noise scale, indicating a small but systematic dataset shift while preserving monotonicity. The ratio of ImageNet $\bar{\alpha}$ at $d50 \to d101$ is $0.303/0.166 = 1.83$, essentially matching the CIFAR-100 ratio $0.342/0.183 = 1.87$; the scaling law's slope is preserved across the dataset gap. A statistical accident producing the same decreasing trend across two depths at this gap-to-noise ratio is implausible.
 
-\begin{figure}[t]
+\begin{figure}[!ht]
     \centering
-    \includegraphics[width=0.85\linewidth]{figures/fig_depth_alpha_v2.pdf}
+    \includegraphics[width=0.72\linewidth]{figures/fig_depth_alpha_v2.pdf}
     \caption{The depth--$\bar{\alpha}$ scaling law. Mean converged $\bar{\alpha}$ decreases monotonically with nominal depth $L$ across CIFAR-10, CIFAR-100, and ImageNet. As depth grows $50 \to 200$, ResNets autonomously suppress $\sim$65\% of their residual contribution. Error bars: $\pm 1$ std over 3 seeds (CIFAR); ImageNet uses a single seed.}
     \label{fig:depth_alpha}
 \end{figure}
@@ -226,9 +238,9 @@ Although ImageNet uses a single seed due to compute, the CIFAR scaling law has t
 
 The mean hides structure. Figure~\ref{fig:perblock_alpha} shows per-block $\alpha$ for a 200-layer network (66 blocks, LRS Low, CIFAR-100). Two patterns emerge: \textbf{downsampling blocks have high $\alpha$} (0.42--0.96), and \textbf{normal blocks have low $\alpha$} (0.06--0.15) with progressive decrease toward stage end. The network treats each stage as ``one essential transformation (downsampling) followed by progressively negligible refinements.''
 
-\begin{figure}[t]
+\begin{figure}[!ht]
     \centering
-    \includegraphics[width=\linewidth]{figures/fig4_perblock_alpha.pdf}
+    \includegraphics[width=0.85\linewidth]{figures/fig4_perblock_alpha.pdf}
     \caption{Per-block $\alpha$ for ResNet-200 on CIFAR-100. Stage boundaries (downsampling blocks) maintain high $\alpha$; within-stage blocks converge to near-zero values.}
     \label{fig:perblock_alpha}
 \end{figure}
@@ -238,7 +250,7 @@ The mean hides structure. Figure~\ref{fig:perblock_alpha} shows per-block $\alph
 
 Using $\alpha > 0.3$ as ``active block'' threshold, only 5--6 of 66 blocks in a 200-layer network qualify---effective depth $\sim$8\% of nominal. To avoid threshold dependence, we additionally report the threshold-free metric $D_\text{eff} = \sum_i \alpha_i$ (Table~\ref{tab:deff}): quadrupling blocks ($16 \to 66$) increases $D_\text{eff}$ by only $40\%$ ($5.4 \to 7.5$). Per-block decomposition shows that within-stage $\bar{\alpha}$ stays in $[0.06, 0.15]$ (near-identity) while downsampling-block $\bar{\alpha}$ remains in $[0.42, 0.96]$ (active transformation).
 
-\begin{table}[t]
+\begin{table}[!ht]
 \centering
 \small
 \caption{Threshold-free effective depth $D_\text{eff} = \sum_i \alpha_i$ for LRS Low on CIFAR-100. Although nominal depth scales 4$\times$, $D_\text{eff}$ scales only 1.4$\times$, confirming that most added blocks are not used.}
@@ -260,7 +272,7 @@ Using $\alpha > 0.3$ as ``active block'' threshold, only 5--6 of 66 blocks in a 
 
 The three initializations reveal dramatic differences in training stability with depth (Tables~\ref{tab:cifar10}, \ref{tab:cifar100}). LRS Low matches or beats baseline at all depths with low variance. LRS Mid degrades at depth 200. LRS High shows progressive degradation, culminating in catastrophic failure (CIFAR-100: $37.50 \pm 29.20\%$). The mechanism is gradient-preservation (Eq.~\ref{eq:total_grad}): with $\alpha_0 = 0.88$, the identity baseline is $0.12^{66} \approx 0$ through 66 blocks, making learning impossible without rapid $\alpha$ adjustment---which itself requires gradients.
 
-\begin{table}[t]
+\begin{table}[!ht]
 \centering
 \small
 \caption{CIFAR-10 test accuracy (\%, 3-seed mean $\pm$ std). LRS High collapses at depth 200.}
@@ -277,7 +289,7 @@ The three initializations reveal dramatic differences in training stability with
 \end{tabular}
 \end{table}
 
-\begin{table}[t]
+\begin{table}[!ht]
 \centering
 \small
 \caption{CIFAR-100 test accuracy (\%, 3-seed mean $\pm$ std). LRS High fails catastrophically.}
@@ -299,7 +311,7 @@ The three initializations reveal dramatic differences in training stability with
 
 A natural concern: is the low effective depth an artifact of randomly initialized residual branches? We test this by initializing residual branches as identity transformations (HybridA: identity init for layers 3 \& 4; Full Identity: all layers). Results on CIFAR-100 (Table~\ref{tab:identity_init}): full identity init catastrophically fails (12.98\% at depth 200) due to symmetry that the network cannot break. Partial identity + LRS achieves the best accuracy (81.14\%). \emph{Crucially}, the learned $\bar{\alpha}$ is nearly identical between random and identity init ($0.114$ vs.\ $0.118$, with 5 vs.\ 6 active blocks out of 66). The network converges to the same effective depth regardless of where the residual branch starts---ruling out initialization as the source of low effective depth.
 
-\begin{table}[t]
+\begin{table}[!ht]
 \centering
 \small
 \caption{Identity init analysis (CIFAR-100, 3-seed mean $\pm$ std). Effective depth is invariant to residual branch initialization.}
@@ -322,7 +334,7 @@ ResNet (Full Identity) & 13.41$\pm$0.41 & 12.98$\pm$0.16 & --- & --- \\
 
 To validate that \emph{learning} $\alpha$ is essential, we compare with fixed-$\alpha$ variants at depth 152 (Table~\ref{tab:fixed_alpha}). Two findings emerge. (i) Fixed $\alpha = 0.5$ yields only $44.19\%$ because the formulation $0.5 F(x) + 0.5 x$ halves both branches uniformly, unlike standard ResNet's $F(x) + x$. We include this point for completeness of the sweep; the resulting drop confounds the role of magnitude with the role of allocation and should not be read as the load-bearing comparison. (ii) The relevant comparison is fixed $\alpha = 0.1$, close to the learned mean, which still underperforms learned LRS by $0.47\%$. While modest, this gap is consistent with learned LRS exploiting per-block heterogeneity: downsampling blocks maintain $\alpha \in [0.42, 0.96]$ while within-stage blocks settle near $\alpha \in [0.06, 0.15]$ (Section~\ref{sec:perblock}). A uniform constant cannot capture this structure.
 
-\begin{table}[t]
+\begin{table}[!ht]
 \centering
 \small
 \caption{Fixed vs.\ learned $\alpha$ at depth 152, CIFAR-100. Learned per-block structure is essential.}
@@ -349,7 +361,7 @@ If $\alpha_i$ truly reports block usage, then blocks with very low $\alpha$ shou
 
 Table~\ref{tab:pruning} reports the results on ResNet-200/CIFAR-100. Three findings:
 
-\begin{table}[t]
+\begin{table}[!ht]
 \centering
 \small
 \caption{$\alpha$-guided pruning on ResNet-200/CIFAR-100. Accuracy retained through 10 epochs of fine-tuning; FLOPs and latency measured on actual short-circuited forward pass.}
@@ -376,9 +388,9 @@ $\alpha < 0.15$ & 58 / 66 & 3.63\% & 72.63\% & $-$7.91 & 15.0\% & 18.0\% \\
 
 Figure~\ref{fig:pruning} visualizes the accuracy-efficiency trade-off.
 
-\begin{figure}[t]
+\begin{figure}[!ht]
     \centering
-    \includegraphics[width=\linewidth]{figures/fig_pruning_efficiency.pdf}
+    \includegraphics[width=0.88\linewidth]{figures/fig_pruning_efficiency.pdf}
     \caption{$\alpha$-guided pruning on ResNet-200/CIFAR-100. (a) Fine-tuning recovers accuracy across all thresholds; the sweet spot is $\alpha < 0.08$ at 4.6\% drop. (b) Pruning $\alpha < 0.08$ removes 56\% of FLOPs and 51\% of inference latency, demonstrating that self-selected low-$\alpha$ blocks are functionally near-identity.}
     \label{fig:pruning}
 \end{figure}
@@ -388,7 +400,7 @@ Figure~\ref{fig:pruning} visualizes the accuracy-efficiency trade-off.
 
 We compare LRS with residual scaling baselines at depth 152 on CIFAR-100 (Table~\ref{tab:method_comparison}, 3-seed mean). All methods fall within a $0.84\%$ band. Performance similarity is expected---this is not a method paper. LRS distinguishes itself in providing per-block interpretability (Table~\ref{tab:comparison}) at no accuracy cost.
 
-\begin{table}[t]
+\begin{table}[!ht]
 \centering
 \small
 \caption{Residual scaling methods at depth 152, CIFAR-100 (3-seed mean). Methods perform similarly; LRS uniquely provides per-block measurement.}
@@ -432,23 +444,11 @@ If the optimal $\alpha$ is much less than 0.5, why does standard ResNet (implici
 \subsection{Practical Implications}
 \label{sec:practical_implications}
 
-Our findings translate into three actionable guidelines.
-
-\textbf{(1) $\alpha$-guided structural pruning.} The strongest practical use of LRS is as an automatic block-importance criterion. Unlike magnitude-based pruning or sensitivity analysis, $\alpha$ is produced as a byproduct of training---no additional importance scoring required. The procedure is one-shot: train once with LRS, threshold $\alpha$, fine-tune for $\sim$10 epochs. We demonstrated $54\%$ FLOPs / $52\%$ latency reduction at $4.6\%$ accuracy cost (Section~\ref{sec:pruning}).
-
-\textbf{(2) Identity-favoring initialization is essential.} The catastrophic failure of LRS High at depth 200 demonstrates that residual-favoring initialization is not merely suboptimal but actively destabilizes training. Initializing $\alpha_0 \leq 0.12$ (equivalently $\theta_0 \leq -2$) is safe across all depths we tested. This aligns with ReZero ($\alpha_0 = 0$) and SkipInit but is more permissive: $\alpha_0 \approx 0.12$ allows refinement from a non-degenerate starting point.
-
-\textbf{(3) Architecture search.} The heterogeneous $\alpha$ distribution provides a falsifiable design heuristic: allocate capacity at stage boundaries rather than within stages. NAS procedures could use $\alpha$-statistics as a regularizer against over-deep within-stage configurations.
+Our findings translate into three actionable guidelines. \textbf{(1) $\alpha$-guided pruning} provides an automatic block-importance criterion produced as a training byproduct---one-shot workflow (train once with LRS, threshold $\alpha$, fine-tune $\sim$10 epochs) yields $54\%$ FLOPs / $52\%$ latency reduction at $4.6\%$ accuracy cost. \textbf{(2) Identity-favoring initialization} ($\alpha_0 \leq 0.12$, $\theta_0 \leq -2$) is necessary at extreme depth---residual-favoring initialization actively destabilizes training. \textbf{(3) Architecture design}: the heterogeneous $\alpha$ distribution justifies allocating capacity at stage boundaries rather than within stages, and NAS procedures could use $\alpha$-statistics as a regularizer against over-deep within-stage configurations.
 
 \subsection{Limitations}
 
-\textbf{Scale of ImageNet evaluation.} We verify the scaling law at ImageNet depths 50 and 101 with a single seed due to compute budget; deeper ImageNet models (152, 200) and additional seeds would strengthen the claim. The CIFAR cross-seed variance of $\bar{\alpha}$ ($<1\%$ of the mean at all depths, Section~\ref{sec:alpha_convergence}) provides the relevant noise floor: the ImageNet--CIFAR gaps we observe (20--80$\times$ this noise) are too large to be seed accidents, but the absence of ImageNet-internal seed replicates means we cannot directly characterize ImageNet's own noise.
-
-\textbf{Measurement-induced bias.} LRS adds one parameter per block and modifies the optimization landscape. The identity-initialization experiments (Section~\ref{sec:identity_init}) show convergent $\bar{\alpha}$ regardless of starting point, arguing the convergence target is intrinsic. Prior work~\cite{de2020batch} independently established that batch normalization biases standard ResNet toward identity---a phenomenon LRS makes explicit but does not create.
-
-\textbf{Architecture scope.} The analysis is restricted to bottleneck ResNets. Basic blocks, Vision Transformers, and other residual architectures are not covered. LayerScale~\cite{touvron2021going} serves a similar stabilization role in ViTs but its per-channel parameterization does not yield the per-block scalar interpretation LRS provides.
-
-\textbf{Threshold dependency.} The ``active block'' threshold $\alpha > 0.3$ is arbitrary. We address this by reporting (i) results across four thresholds (consistent qualitative pattern) and (ii) a threshold-free metric $D_\text{eff} = \sum_i \alpha_i$ recovering the same conclusion.
+\textbf{ImageNet scale.} We verify the scaling law at ImageNet depths 50 and 101 with single seeds; deeper models and additional seeds would strengthen the claim. The CIFAR seed-noise floor ($<1\%$ of the mean) and the 20--80$\times$ larger ImageNet-CIFAR gaps argue against seed accidents, but ImageNet's internal noise is not directly characterized. \textbf{Measurement bias.} LRS adds one parameter per block; identity-init experiments (Section~\ref{sec:identity_init}) show convergent $\bar{\alpha}$ regardless of starting point, arguing intrinsic convergence. \textbf{Architecture scope.} The analysis is restricted to bottleneck ResNets; basic blocks and Vision Transformers are not covered. \textbf{Threshold dependency.} The ``active block'' threshold $\alpha > 0.3$ is arbitrary, addressed via the threshold-free $D_\text{eff} = \sum_i \alpha_i$.
 
 %-------------------------------------------------------------------------
 \section{Conclusion}
