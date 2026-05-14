@@ -32,6 +32,13 @@
 % cls가 hyperref를 이미 로드하므로 중복 import 제거
 \usepackage{kotex}  % 한국어 지원 (XeLaTeX/LuaLaTeX 필수)
 
+% Float 간격 — 표/그림이 본문과 겹치지 않도록
+\setlength{\textfloatsep}{12pt plus 2pt minus 2pt}
+\setlength{\intextsep}{12pt plus 2pt minus 2pt}
+\setlength{\floatsep}{10pt plus 2pt minus 2pt}
+\setlength{\abovecaptionskip}{6pt}
+\setlength{\belowcaptionskip}{4pt}
+
 \begin{document}
 \maketitle
 

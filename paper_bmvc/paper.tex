@@ -30,6 +30,13 @@ Self-Selection of Effective Depth Enabled by Skip Connections}
 % Note: bmvc2k.cls already loads hyperref with colored links (URL=blue, cite=red)
 % — this is BMVC default; do not redefine here
 
+% Float spacing — prevent tables/figures from overlapping body text
+\setlength{\textfloatsep}{12pt plus 2pt minus 2pt}     % between top/bottom floats and text
+\setlength{\intextsep}{12pt plus 2pt minus 2pt}        % between in-text floats and text
+\setlength{\floatsep}{10pt plus 2pt minus 2pt}         % between two floats
+\setlength{\abovecaptionskip}{6pt}                     % space above caption
+\setlength{\belowcaptionskip}{4pt}                     % space below caption
+
 %-------------------------------------------------------------------------
 \begin{document}
 
@@ -86,7 +93,7 @@ where $\theta$ is a single learnable scalar per block. Because the two coefficie
 
 \subsection{Residual Networks and Skip Connections}
 
-ResNet~\cite{he2016deep} introduced skip connections to alleviate gradient vanishing in deep networks. He \etal~\cite{he2016identity} further showed that identity mappings improve gradient flow. Highway Networks~\cite{srivastava2015highway} proposed gated information flow prior to ResNet, but ResNet's simpler additive shortcut proved more effective in practice. De \& Smith~\cite{de2020batch} showed that batch normalization biases standard ResNet residuals toward identity, a phenomenon LRS makes explicit but does not create.
+ResNet~\cite{he2016deep} introduced skip connections to alleviate gradient vanishing in deep networks; identity mappings further improve gradient flow~\cite{he2016identity}. Highway Networks~\cite{srivastava2015highway} preceded ResNet with gated information flow. De \& Smith~\cite{de2020batch} showed batch normalization biases standard ResNet residuals toward identity---a phenomenon LRS makes explicit but does not create.
 
 \subsection{Residual Scaling Methods}
 
@@ -229,39 +236,21 @@ The mean hides structure. Figure~\ref{fig:perblock_alpha} shows per-block $\alph
 \subsection{Effective Depth Quantification}
 \label{sec:effective_depth}
 
-Using $\alpha > 0.3$ as ``active block'' threshold (Table~\ref{tab:effective_depth}), only 5--6 of 66 blocks in a 200-layer network qualify---effective depth $\sim$8\% of nominal. To avoid threshold dependence, we additionally report $D_\text{eff} = \sum_i \alpha_i$ (Table~\ref{tab:deff}): quadrupling blocks ($16 \to 66$) increases $D_\text{eff}$ by only $40\%$ ($5.4 \to 7.5$).
+Using $\alpha > 0.3$ as ``active block'' threshold, only 5--6 of 66 blocks in a 200-layer network qualify---effective depth $\sim$8\% of nominal. To avoid threshold dependence, we additionally report the threshold-free metric $D_\text{eff} = \sum_i \alpha_i$ (Table~\ref{tab:deff}): quadrupling blocks ($16 \to 66$) increases $D_\text{eff}$ by only $40\%$ ($5.4 \to 7.5$). Per-block decomposition shows that within-stage $\bar{\alpha}$ stays in $[0.06, 0.15]$ (near-identity) while downsampling-block $\bar{\alpha}$ remains in $[0.42, 0.96]$ (active transformation).
 
 \begin{table}[t]
 \centering
 \small
-\caption{Effective depth at ResNet-200/CIFAR-100, LRS Low.}
-\label{tab:effective_depth}
-\begin{tabular}{lcc}
-\toprule
-\textbf{Metric} & \textbf{Value} & \textbf{Interpretation} \\
-\midrule
-Nominal blocks & 66 & total residual blocks \\
-Active blocks ($\alpha > 0.3$) & 5--6 & meaningfully transforming \\
-Effective depth ratio & $\sim$8\% & fraction of blocks used \\
-$\bar{\alpha}$ (normal blocks) & 0.06--0.15 & near-identity \\
-$\bar{\alpha}$ (downsampling blocks) & 0.42--0.96 & active transformation \\
-\bottomrule
-\end{tabular}
-\end{table}
-
-\begin{table}[t]
-\centering
-\small
-\caption{Threshold-free effective depth $D_\text{eff} = \sum_i \alpha_i$ for LRS Low on CIFAR-100. Although nominal depth scales 4$\times$, $D_\text{eff}$ scales only 1.4$\times$.}
+\caption{Threshold-free effective depth $D_\text{eff} = \sum_i \alpha_i$ for LRS Low on CIFAR-100. Although nominal depth scales 4$\times$, $D_\text{eff}$ scales only 1.4$\times$, confirming that most added blocks are not used.}
 \label{tab:deff}
-\begin{tabular}{lccc}
+\begin{tabular}{lcccc}
 \toprule
-\textbf{Depth} & \textbf{Blocks} ($N$) & $D_\text{eff} = \sum \alpha_i$ & $D_\text{eff}/N$ \\
+\textbf{Depth} & \textbf{Blocks} ($N$) & $D_\text{eff} = \sum \alpha_i$ & $D_\text{eff}/N$ & \textbf{Active} ($\alpha{>}0.3$) \\
 \midrule
-50  & 16 & 5.4 & 34.0\% \\
-101 & 33 & 6.0 & 18.3\% \\
-152 & 50 & 6.7 & 13.3\% \\
-200 & 66 & 7.5 & 11.4\% \\
+50  & 16 & 5.4 & 34.0\% & 6--7 \\
+101 & 33 & 6.0 & 18.3\% & 6 \\
+152 & 50 & 6.7 & 13.3\% & 5--6 \\
+200 & 66 & 7.5 & 11.4\% & 5--6 \\
 \bottomrule
 \end{tabular}
 \end{table}
@@ -438,7 +427,7 @@ Per-block analysis shows that downsampling blocks maintain high $\alpha$ (0.42--
 
 \subsection{Why Standard ResNet Still Works Well}
 
-If the optimal $\alpha$ is much less than 0.5, why does standard ResNet (implicit $\alpha = 0.5$ in the LRS view) perform well? The answer: standard ResNet uses $y = F(x) + x$, which does not constrain the relative scale of $F(x)$ and $x$. Through batch normalization and weight magnitude adjustment, the network can effectively achieve a small $\|F(x)\|/\|x\|$ ratio without an explicit $\alpha$. LRS makes this implicit ratio observable. De \& Smith~\cite{de2020batch} independently showed that batch normalization biases residual blocks toward small $F(x)$, effectively implementing identity preference without learnable scaling. LRS confirms and quantifies this phenomenon.
+If the optimal $\alpha$ is much less than 0.5, why does standard ResNet (implicit $\alpha = 0.5$) perform well? Standard ResNet uses $y = F(x) + x$, which does not constrain $\|F(x)\|/\|x\|$. Through batch normalization and weight magnitude adjustment, the network can effectively achieve a small ratio without an explicit $\alpha$---a phenomenon De \& Smith~\cite{de2020batch} established independently. LRS makes this implicit ratio observable and quantifies it.
 
 \subsection{Practical Implications}
 \label{sec:practical_implications}
@@ -465,15 +454,7 @@ Our findings translate into three actionable guidelines.
 \section{Conclusion}
 \label{sec:conclusion}
 
-We proposed and empirically supported a concrete answer to why deep ResNets train successfully: they autonomously select an effective depth far smaller than their nominal depth, and skip connections provide the architectural freedom that makes this self-selection possible. The thesis rests on three lines of measurable evidence.
-
-\textbf{Self-selection happens, and it is large.} Across $120$ CIFAR runs (3 seeds, 4 depths, 2 datasets) and ImageNet at depths 50/101, deep ResNets compress effective depth to roughly $8\%$ of nominal. The depth--$\bar{\alpha}$ scaling law is consistent across datasets.
-
-\textbf{Skip connections are the enabling mechanism.} Without them, gradients explode and training is impossible---the network has no opportunity to self-select. With them, the same depth becomes trainable specifically because the network can route information through identity.
-
-\textbf{The selection is intrinsic, not artifact.} Random and identity initialization converge to nearly identical $\bar{\alpha}$. $\alpha$-guided pruning validates the measurement: $\alpha < 0.03$ blocks can be removed with zero accuracy loss; pruning $56\%$ of blocks yields $54\%$ FLOPs / $52\%$ latency reduction at $4.6\%$ accuracy cost.
-
-The conventional view casts deep networks as ``working'' only when each added layer contributes positively. Our results suggest a different reading: deep networks work when they are allowed not to use most layers. Capacity not used is not wasted---it is reserve, and skip connections are the architectural mechanism that makes reserve a viable design choice.
+We proposed and empirically supported a concrete answer to why deep ResNets train successfully: they autonomously select an effective depth far smaller than their nominal depth, and skip connections provide the architectural freedom that makes this self-selection possible. Across $120$ CIFAR runs and ImageNet at depths 50/101, deep ResNets compress effective depth to roughly $8\%$ of nominal; the depth--$\bar{\alpha}$ scaling law is consistent across datasets. Skip connections are the enabling mechanism: without them gradients explode and self-selection is impossible. The selection is intrinsic, validated by random/identity-init invariance ($\bar{\alpha}$ within $4\%$) and by $\alpha$-guided pruning---$\alpha < 0.03$ blocks remove with zero accuracy loss, and $56\%$ block pruning yields $54\%$ FLOPs / $52\%$ latency reduction at $4.6\%$ accuracy cost. The conventional view casts deep networks as ``working'' only when each added layer contributes positively. Our results suggest a different reading: deep networks work when they are allowed not to use most layers. Capacity not used is not wasted---it is reserve, and skip connections make reserve a viable design choice.
 
 %-------------------------------------------------------------------------
 \bibliography{refs}
