@@ -2,6 +2,14 @@
 
 **깊은 잔차 네트워크를 위한 학습 가능한 잔차 스케일링**
 
+## 📄 논문 (Paper)
+
+- **arXiv preprint (PDF):** [`paper_bmvc/arXiv_preprint_ver.pdf`](paper_bmvc/arXiv_preprint_ver.pdf)
+
+[![Paper](https://img.shields.io/badge/Paper-PDF-red.svg)](paper_bmvc/arXiv_preprint_ver.pdf)
+
+> 위 PDF 링크를 클릭하면 GitHub의 PDF 뷰어로 논문을 바로 열람할 수 있습니다.
+
 ## 핵심 아이디어
 
 ResNet의 skip connection에서 착안하여, 각 블록이 **identity와 변환의 비율을 학습**하도록 합니다.
