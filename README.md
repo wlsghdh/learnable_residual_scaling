@@ -4,11 +4,28 @@
 
 ## 📄 논문 (Paper)
 
-- **arXiv preprint (PDF):** [`paper_bmvc/arXiv_preprint_ver.pdf`](paper_bmvc/arXiv_preprint_ver.pdf)
+- **arXiv preprint (PDF 다운로드):** [`paper_bmvc/arXiv_preprint_ver.pdf`](paper_bmvc/arXiv_preprint_ver.pdf)
 
 [![Paper](https://img.shields.io/badge/Paper-PDF-red.svg)](paper_bmvc/arXiv_preprint_ver.pdf)
 
-> 위 PDF 링크를 클릭하면 GitHub의 PDF 뷰어로 논문을 바로 열람할 수 있습니다.
+### 논문 전체 미리보기
+
+<p align="center">
+  <img src="paper_bmvc/preview/page-01.png" width="700" alt="Page 1"><br>
+  <img src="paper_bmvc/preview/page-02.png" width="700" alt="Page 2"><br>
+  <img src="paper_bmvc/preview/page-03.png" width="700" alt="Page 3"><br>
+  <img src="paper_bmvc/preview/page-04.png" width="700" alt="Page 4"><br>
+  <img src="paper_bmvc/preview/page-05.png" width="700" alt="Page 5"><br>
+  <img src="paper_bmvc/preview/page-06.png" width="700" alt="Page 6"><br>
+  <img src="paper_bmvc/preview/page-07.png" width="700" alt="Page 7"><br>
+  <img src="paper_bmvc/preview/page-08.png" width="700" alt="Page 8"><br>
+  <img src="paper_bmvc/preview/page-09.png" width="700" alt="Page 9"><br>
+  <img src="paper_bmvc/preview/page-10.png" width="700" alt="Page 10"><br>
+  <img src="paper_bmvc/preview/page-11.png" width="700" alt="Page 11"><br>
+  <img src="paper_bmvc/preview/page-12.png" width="700" alt="Page 12"><br>
+  <img src="paper_bmvc/preview/page-13.png" width="700" alt="Page 13"><br>
+  <img src="paper_bmvc/preview/page-14.png" width="700" alt="Page 14"><br>
+</p>
 
 ## 핵심 아이디어
 
